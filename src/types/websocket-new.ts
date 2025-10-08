@@ -9,6 +9,7 @@ export interface IniciarSessaoOperadorCommand {
   id_maquina: number;
   id_operador: number;
   id_turno: number;
+  id_sessao?: number; // Opcional: usado quando reconectando uma sessão existente
 }
 
 export interface FinalizarSessaoOperadorCommand {
@@ -42,6 +43,13 @@ export interface FinalizarProducaoMapaCompletaCommand {
 export interface AdicionarRejeitosCommand {
   type: 'adicionar_rejeitos';
   id_maquina: number;
+}
+
+// 3.1. COMANDOS DE JUSTIFICAÇÃO DE PARADA
+export interface AtribuirMotivoParadaCommand {
+  type: 'atribuir_motivo_parada';
+  id_parada: number;
+  id_motivo: number;
 }
 
 // 4. COMANDOS DE SUBSCRIPTION
@@ -79,6 +87,7 @@ export type WebSocketCommandNew =
   | FinalizarProducaoMapaParcialCommand
   | FinalizarProducaoMapaCompletaCommand
   | AdicionarRejeitosCommand
+  | AtribuirMotivoParadaCommand
   | SubscribeCommand
   | UnsubscribeCommand
   | ConsultarMaquinaCommand
@@ -168,6 +177,12 @@ export interface OperatorSession {
   tempo_valido_segundos: number;
 }
 
+export interface ActiveStop {
+  id: number;
+  inicio: number; // timestamp unix
+  motivo_id: number | null;
+}
+
 export interface ShiftProduction {
   id_turno: number;
   id_maquina: number;
@@ -217,6 +232,7 @@ export interface MachineDataNew {
   sessao_operador: OperatorSession | null; // ⚠️ Pode ser null
   producao_turno: ShiftProduction;
   producao_mapa: ProductionMap | null; // ⚠️ Pode ser null
+  parada_ativa: ActiveStop | null; // ⚠️ Se não for null, máquina está parada
 }
 
 // União de todos os eventos
@@ -246,7 +262,7 @@ export interface WebSocketConfig {
 
 // Configuração padrão conforme nova documentação
 export const DEFAULT_WS_CONFIG: WebSocketConfig = {
-  url: 'ws://192.168.1.76:8765', // Servidor WebSocket correto
+  url: 'ws://10.200.0.184:8765', // Servidor WebSocket correto
   port: 8765,
   reconnectAttempts: 5,
   reconnectInterval: 5000,

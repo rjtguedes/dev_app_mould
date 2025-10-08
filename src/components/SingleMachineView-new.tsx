@@ -41,12 +41,17 @@ export function SingleMachineViewNew({
     status, 
     sessao_operador, 
     producao_mapa,
-    turnos 
+    turnos,
+    parada_ativa 
   } = machineData;
 
-  const isActive = status; // true = EM PRODUÇÃO, false = PARADA
+  // ✅ NOVA LÓGICA: máquina está parada se parada_ativa não for null
+  const isStopped = parada_ativa !== null && parada_ativa !== undefined;
+  const isActive = !isStopped; // true = EM PRODUÇÃO, false = PARADA
   const hasSession = !!sessao_operador;
   const hasProductionMap = !!producao_mapa;
+  
+  console.log('[SingleMachineViewNew] Status - parada_ativa:', parada_ativa, 'isStopped:', isStopped, 'isActive:', isActive);
 
   // Função para adicionar rejeito via WebSocket
   const handleAddRejeito = async () => {

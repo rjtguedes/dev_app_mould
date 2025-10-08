@@ -261,10 +261,10 @@ export function Sidebar({
         // 1. Encerrar paradas pendentes
         console.log('1. Verificando e encerrando paradas pendentes...');
         const { data: pendingStops, error: pendingStopsError } = await supabase
-          .from('paradas')
-          .select('id, data_inicio_unix')
+          .from('paradas_redis')
+          .select('id, inicio_unix_segundos')
           .eq('id_sessao', currentSessionId)
-          .is('data_fim_unix', null);
+          .is('fim_unix_segundos', null);
 
         if (pendingStopsError) {
           console.error('Erro ao buscar paradas pendentes:', pendingStopsError);
@@ -274,8 +274,8 @@ export function Sidebar({
           const now = Math.floor(Date.now() / 1000);
           for (const stop of pendingStops) {
             const { error: updateError } = await supabase
-              .from('paradas')
-              .update({ data_fim_unix: now })
+              .from('paradas_redis')
+              .update({ fim_unix_segundos: now })
               .eq('id', stop.id);
             
             if (updateError) {

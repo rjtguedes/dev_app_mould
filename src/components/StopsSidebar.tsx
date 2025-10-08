@@ -34,18 +34,18 @@ export function StopsSidebar({ isOpen, onClose, onJustify, machineId }: StopsSid
     async function loadStops() {
       try {
         const { data, error } = await supabase
-          .from('paradas')
+          .from('paradas_redis')
           .select(`
             id,
-            data_inicio_unix,
-            data_fim_unix,
-            tempo_parada_minutos,
+            inicio_unix_segundos,
+            fim_unix_segundos,
+            duracao_segundos,
             motivo_parada
           `)
           .is('motivo_parada', null)
-          .gt('tempo_parada_minutos', 0)
+          .gt('duracao_segundos', 0)
           .eq('id_maquina', machineId)
-          .order('data_inicio_unix', { ascending: false })
+          .order('inicio_unix_segundos', { ascending: false })
           .limit(50);
 
         if (error) throw error;
@@ -125,16 +125,16 @@ export function StopsSidebar({ isOpen, onClose, onJustify, machineId }: StopsSid
               <div className="space-y-2">
                 <div className="flex items-center gap-2 text-gray-500">
                   <Calendar className="w-4 h-4" />
-                  <span>{formatDateTime(stop.data_inicio_unix).date}</span>
+                  <span>{formatDateTime(stop.inicio_unix_segundos).date}</span>
                 </div>
                 
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <Clock className="w-4 h-4 text-gray-600" />
                     <span className="font-medium">
-                      {formatDateTime(stop.data_inicio_unix).time}
-                      {stop.data_fim_unix ? (
-                        <> - {formatDateTime(stop.data_fim_unix).time}</>
+                      {formatDateTime(stop.inicio_unix_segundos).time}
+                      {stop.fim_unix_segundos ? (
+                        <> - {formatDateTime(stop.fim_unix_segundos).time}</>
                       ) : (
                         <span className="text-orange-500 ml-2">(Em andamento)</span>
                       )}
@@ -142,10 +142,10 @@ export function StopsSidebar({ isOpen, onClose, onJustify, machineId }: StopsSid
                   </div>
                 </div>
                 
-                {stop.tempo_parada_minutos !== null && (
+                {stop.duracao_segundos !== null && (
                   <div className="flex items-center gap-2 text-blue-600">
                     <Timer className="w-4 h-4" />
-                    {formatDuration(stop.tempo_parada_minutos)}
+                    {formatDuration(Math.floor(stop.duracao_segundos / 60))}
                   </div>
                 )}
               </div>

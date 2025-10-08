@@ -13,6 +13,7 @@ import type {
   FinalizarProducaoMapaParcialCommand,
   FinalizarProducaoMapaCompletaCommand,
   AdicionarRejeitosCommand,
+  AtribuirMotivoParadaCommand,
   ConsultarMaquinaCommand,
   ConsultarSessaoCommand,
   ConsultarProducaoMapaCommand
@@ -353,12 +354,17 @@ export const webSocketManager = WebSocketManager.getInstance();
 // Comandos específicos conforme nova documentação
 export const WebSocketCommands = {
   // COMANDOS DE SESSÃO DE OPERADOR
-  iniciarSessaoOperador: (machineId: number, operatorId: number, turnoId: number): IniciarSessaoOperadorCommand => ({
-    type: 'iniciar_sessao_operador',
-    id_maquina: machineId,
-    id_operador: operatorId,
-    id_turno: turnoId
-  }),
+  iniciarSessaoOperador: (machineId: number, operatorId: number, turnoId: number, sessionId?: number): IniciarSessaoOperadorCommand => {
+    const command = {
+      type: 'iniciar_sessao_operador' as const,
+      id_maquina: machineId,
+      id_operador: operatorId,
+      id_turno: turnoId,
+      ...(sessionId && { id_sessao: sessionId }) // Adiciona id_sessao apenas se fornecido
+    };
+    console.log('📤 WebSocketCommands.iniciarSessaoOperador - Comando gerado:', command);
+    return command;
+  },
   
   finalizarSessaoOperador: (machineId: number): FinalizarSessaoOperadorCommand => ({
     type: 'finalizar_sessao_operador',
@@ -401,6 +407,13 @@ export const WebSocketCommands = {
   adicionarRejeitos: (machineId: number): AdicionarRejeitosCommand => ({
     type: 'adicionar_rejeitos',
     id_maquina: machineId
+  }),
+  
+  // COMANDOS DE JUSTIFICAÇÃO DE PARADA
+  atribuirMotivoParada: (idParada: number, idMotivo: number): AtribuirMotivoParadaCommand => ({
+    type: 'atribuir_motivo_parada',
+    id_parada: idParada,
+    id_motivo: idMotivo
   }),
   
   // COMANDOS DE SUBSCRIPTION

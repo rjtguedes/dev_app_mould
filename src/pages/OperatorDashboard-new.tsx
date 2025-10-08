@@ -98,6 +98,9 @@ export function OperatorDashboard({ machine, user, sessionId, onShowSettings, se
   const [showStopReasonModal, setShowStopReasonModal] = useState(false);
   const [isManualStopMode, setIsManualStopMode] = useState(false);
 
+  // ✅ Estado para armazenar dados das estações filhas (child machines/postos)
+  const [childMachinesData, setChildMachinesData] = useState<Map<number, MachineDataNew>>(new Map());
+
   // ==================== HANDLERS PARA NOVA ESTRUTURA DE EVENTOS ====================
 
   // ✅ NOVO - Handler para atualizações da máquina (estrutura completa)
@@ -110,8 +113,40 @@ export function OperatorDashboard({ machine, user, sessionId, onShowSettings, se
       dados: event.machine_data
     });
 
-    // Atualizar dados da máquina
+    // ✅ Verificar se é update de estação filha (child machine/posto)
+    const isChildStation = event.is_child_update === true || event.source_machine_id !== event.target_machine_id;
+    
+    if (isChildStation) {
+      // É uma estação filha (posto) - armazenar seus dados
+      console.log('👶 [NOVA] Update de ESTAÇÃO FILHA:', event.source_machine_id, event.machine_data.nome);
+      
+      setChildMachinesData(prev => {
+        const newMap = new Map(prev);
+        newMap.set(event.source_machine_id, event.machine_data);
+        console.log('📊 [NOVA] Total de estações:', newMap.size, 'IDs:', Array.from(newMap.keys()));
+        return newMap;
+      });
+      
+      // Se for sinal, marcar qual estação teve o último sinal
+      if (event.update_type === 'sinal') {
+        setLastSignalStationId(event.source_machine_id);
+        console.log('🎯 [NOVA] Último sinal da estação:', event.source_machine_id, {
+          sinais: event.additional_data.sinais,
+          sinais_validos: event.additional_data.sinais_validos,
+          rejeitos: event.additional_data.rejeitos
+        });
+      }
+    } else {
+      // É a máquina principal - atualizar seus dados
+      console.log('🏭 [NOVA] Update da MÁQUINA PRINCIPAL:', event.target_machine_id);
     setWsMachineData(event.machine_data);
+
+      // ✅ NOVA LÓGICA: Verificar parada_ativa para definir status da máquina
+      const isStopped = event.machine_data.parada_ativa !== null && event.machine_data.parada_ativa !== undefined;
+      setIsMachineStopped(isStopped);
+      setStatusParada(isStopped);
+      
+      console.log('🔍 [NOVA] Status da máquina - parada_ativa:', event.machine_data.parada_ativa, 'isStopped:', isStopped);
 
     // Processar diferentes tipos de update
     switch (event.update_type) {
@@ -121,21 +156,18 @@ export function OperatorDashboard({ machine, user, sessionId, onShowSettings, se
         break;
       
       case 'parada':
-        console.log('⏸️ [NOVA] Máquina parou');
-        setIsMachineStopped(true);
-        setStatusParada(true);
+          console.log('⏸️ [NOVA] Máquina parou - parada_ativa:', event.machine_data.parada_ativa);
         break;
       
       case 'retomada':
         console.log('▶️ [NOVA] Máquina retomou');
-        setIsMachineStopped(false);
-        setStatusParada(false);
         break;
       
       case 'velocidade':
         console.log('⚡ [NOVA] Nova velocidade:', event.additional_data.velocidade);
         setVelocidade(event.additional_data.velocidade);
         break;
+      }
     }
   }, []);
 
@@ -557,7 +589,7 @@ export function OperatorDashboard({ machine, user, sessionId, onShowSettings, se
             {wsMachineData && (
               <div className="mt-4 grid grid-cols-3 gap-4 text-sm">
                 <div>
-                  <span className="font-medium">Status:</span> {wsMachineData.status ? '🟢 Produzindo' : '🔴 Parada'}
+                  <span className="font-medium">Status:</span> {wsMachineData.parada_ativa ? '🔴 Parada' : '🟢 Produzindo'}
                 </div>
                 <div>
                   <span className="font-medium">Velocidade:</span> {wsMachineData.velocidade} ciclos/h
@@ -569,34 +601,186 @@ export function OperatorDashboard({ machine, user, sessionId, onShowSettings, se
             )}
           </div>
 
-          {/* Conteúdo existente do dashboard */}
-          <div className="text-center py-8">
-            <h2 className="text-2xl font-bold text-gray-800 mb-4">
-              Dashboard da Máquina {machine.nome}
-            </h2>
-            <p className="text-gray-600">
-              Nova implementação WebSocket carregada com sucesso!
-            </p>
-            <div className="mt-4 space-x-4">
+          {/* Dashboard com dados das estações (se for multiposto) */}
+          <div className="space-y-6">
+            {machine.multipostos && childMachinesData.size > 0 ? (
+              <>
+                {/* Coluna 1: Sessão do Operador das Estações */}
+                <div className="bg-white/5 backdrop-blur-sm rounded-xl border border-white/10 p-6">
+                  <h3 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
+                    <svg className="w-5 h-5 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                    </svg>
+                    Sessão do Operador - Estações
+                  </h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                    {Array.from(childMachinesData.entries()).map(([machineId, data]) => {
+                      const isLastSignal = lastSignalStationId === machineId;
+                      const sessionData = data.sessao_operador;
+                      
+                      return (
+                        <div 
+                          key={machineId}
+                          className={`bg-white/5 backdrop-blur-sm rounded-lg border p-4 transition-all duration-300 ${
+                            isLastSignal 
+                              ? 'border-yellow-400 shadow-lg shadow-yellow-400/20 ring-2 ring-yellow-400/50' 
+                              : 'border-white/10'
+                          }`}
+                        >
+                          {/* Header da estação */}
+                          <div className="flex items-center justify-between mb-3">
+                            <h4 className="text-sm font-bold text-white">{data.nome}</h4>
+                            {isLastSignal && (
+                              <div className="flex items-center gap-1 text-yellow-400">
+                                <svg className="w-4 h-4 animate-pulse" fill="currentColor" viewBox="0 0 20 20">
+                                  <path fillRule="evenodd" d="M11.3 1.046A1 1 0 0112 2v5h4a1 1 0 01.82 1.573l-7 10A1 1 0 018 18v-5H4a1 1 0 01-.82-1.573l7-10a1 1 0 011.12-.38z" clipRule="evenodd" />
+                                </svg>
+                                <span className="text-xs font-medium">SINAL!</span>
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Dados da sessão */}
+                          <div className="space-y-2">
+                            <div className="grid grid-cols-2 gap-2">
+                              <div className="bg-green-500/10 rounded p-2">
+                                <div className="text-xs text-green-400/80 mb-1">Válidos</div>
+                                <div className="text-lg font-bold text-green-400">{sessionData?.sinais_validos || 0}</div>
+                              </div>
+                              <div className="bg-red-500/10 rounded p-2">
+                                <div className="text-xs text-red-400/80 mb-1">Rejeitos</div>
+                                <div className="text-lg font-bold text-red-400">{sessionData?.rejeitos || 0}</div>
+                              </div>
+                            </div>
+                            <div className="bg-blue-500/10 rounded p-2">
+                              <div className="text-xs text-blue-400/80 mb-1">Total de Sinais</div>
+                              <div className="text-lg font-bold text-blue-400">{sessionData?.sinais || 0}</div>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Coluna 2: Produção Mapa das Estações (só se houver dados) */}
+                {Array.from(childMachinesData.values()).some(data => data.producao_mapa && data.producao_mapa.id_mapa !== null) && (
+                  <div className="bg-white/5 backdrop-blur-sm rounded-xl border border-white/10 p-6">
+                    <h3 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
+                      <svg className="w-5 h-5 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                      </svg>
+                      Produção Mapa - Estações
+                    </h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                      {Array.from(childMachinesData.entries())
+                        .filter(([_, data]) => data.producao_mapa && data.producao_mapa.id_mapa !== null)
+                        .map(([machineId, data]) => {
+                          const isLastSignal = lastSignalStationId === machineId;
+                          const producaoData = data.producao_mapa!;
+                          const progresso = producaoData.qt_produzir > 0 
+                            ? Math.min(100, Math.round((producaoData.sinais_validos / producaoData.qt_produzir) * 100))
+                            : 0;
+                          
+                          return (
+                            <div 
+                              key={machineId}
+                              className={`bg-white/5 backdrop-blur-sm rounded-lg border p-4 transition-all duration-300 ${
+                                isLastSignal 
+                                  ? 'border-yellow-400 shadow-lg shadow-yellow-400/20 ring-2 ring-yellow-400/50' 
+                                  : 'border-white/10'
+                              }`}
+                            >
+                              {/* Header da estação */}
+                              <div className="flex items-center justify-between mb-3">
+                                <h4 className="text-sm font-bold text-white">{data.nome}</h4>
+                                {isLastSignal && (
+                                  <div className="flex items-center gap-1 text-yellow-400">
+                                    <svg className="w-4 h-4 animate-pulse" fill="currentColor" viewBox="0 0 20 20">
+                                      <path fillRule="evenodd" d="M11.3 1.046A1 1 0 0112 2v5h4a1 1 0 01.82 1.573l-7 10A1 1 0 018 18v-5H4a1 1 0 01-.82-1.573l7-10a1 1 0 011.12-.38z" clipRule="evenodd" />
+                                    </svg>
+                                    <span className="text-xs font-medium">SINAL!</span>
+                                  </div>
+                                )}
+                              </div>
+
+                              {/* Dados da produção mapa */}
+                              <div className="space-y-2">
+                                <div className="grid grid-cols-3 gap-2 text-center">
+                                  <div>
+                                    <div className="text-xs text-green-400/80 mb-1">Válidos</div>
+                                    <div className="text-sm font-bold text-green-400">{producaoData.sinais_validos}</div>
+                                  </div>
+                                  <div>
+                                    <div className="text-xs text-red-400/80 mb-1">Rejeitos</div>
+                                    <div className="text-sm font-bold text-red-400">{producaoData.rejeitos}</div>
+                                  </div>
+                                  <div>
+                                    <div className="text-xs text-orange-400/80 mb-1">Saldo</div>
+                                    <div className="text-sm font-bold text-orange-400">{producaoData.saldo_a_produzir}</div>
+                                  </div>
+                                </div>
+                                
+                                {/* Barra de progresso */}
+                                {producaoData.qt_produzir > 0 && (
+                                  <div className="mt-2">
+                                    <div className="flex items-center justify-between mb-1">
+                                      <span className="text-xs text-white/70">Progresso</span>
+                                      <span className="text-xs font-medium text-white">{progresso}%</span>
+                                    </div>
+                                    <div className="w-full bg-white/10 rounded-full h-2">
+                                      <div 
+                                        className="bg-gradient-to-r from-purple-400 to-purple-500 h-2 rounded-full transition-all duration-300"
+                                        style={{ width: `${progresso}%` }}
+                                      />
+                                    </div>
+                                    <div className="text-xs text-white/60 mt-1 text-center">
+                                      {producaoData.sinais_validos} / {producaoData.qt_produzir}
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                    </div>
+                  </div>
+                )}
+
+                {/* Botões de teste */}
+                <div className="bg-white/5 backdrop-blur-sm rounded-xl border border-white/10 p-6">
+                  <h3 className="text-lg font-bold text-white mb-4">Comandos de Teste</h3>
+                  <div className="flex flex-wrap gap-4">
               <button
                 onClick={() => consultarMaquina()}
-                className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+                      className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
               >
                 Consultar Máquina
               </button>
               <button
                 onClick={() => consultarSessao()}
-                className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700"
+                      className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
               >
                 Consultar Sessão
               </button>
               <button
                 onClick={() => handleAddRejectToMachine(machine.id_maquina)}
-                className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700"
+                      className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
               >
                 Adicionar Rejeito
               </button>
             </div>
+                </div>
+              </>
+            ) : (
+              <div className="bg-white/5 backdrop-blur-sm rounded-xl border border-white/10 p-6 text-center">
+                <p className="text-white/60">
+                  {!machine.multipostos 
+                    ? '⚠️ Máquina não é multiposto' 
+                    : '⏳ Aguardando dados das estações...'}
+                </p>
+              </div>
+            )}
           </div>
         </div>
       </div>

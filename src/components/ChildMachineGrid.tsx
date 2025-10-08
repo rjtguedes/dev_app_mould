@@ -53,8 +53,10 @@ export function ChildMachineGrid({
              <div className="w-full text-white bg-black/20 rounded-lg border border-white/10 overflow-hidden">
         
         {/* Header para modo EVA */}
-        <div className="grid grid-cols-[1fr_1fr_1fr] gap-0 py-3 px-3 bg-black/30 border-b border-white/20 text-gray-300 text-xs font-semibold uppercase tracking-wide">
+        <div className="grid grid-cols-[1fr_1fr_1fr_1fr_1fr] gap-0 py-3 px-3 bg-black/30 border-b border-white/20 text-gray-300 text-xs font-semibold uppercase tracking-wide">
           <div className="text-center">Estação</div>
+          <div className="text-center">Sessão Operador</div>
+          <div className="text-center">Produção Mapa</div>
           <div className="text-center">Produção</div>
           <div className="text-center">Ação</div>
         </div>
@@ -63,7 +65,7 @@ export function ChildMachineGrid({
         {evaStations.map((station, index) => (
           <div
             key={`eva-station-${side}-${station.stationNumber}`}
-            className={`grid grid-cols-[1fr_1fr_1fr] gap-0 py-3 px-3 border-b border-white/5 items-center text-xs transition-colors hover:bg-white/5 ${
+            className={`grid grid-cols-[1fr_1fr_1fr_1fr_1fr] gap-0 py-3 px-3 border-b border-white/5 items-center text-xs transition-colors hover:bg-white/5 ${
               station.production?.websocket_data?.highlight_until && station.production.websocket_data.highlight_until > Date.now() 
                 ? 'bg-green-800/50 animate-pulse' 
                 : ''
@@ -86,7 +88,45 @@ export function ChildMachineGrid({
               </div>
             </div>
             
-            {/* Dados de Produção */}
+            {/* Dados de Sessão do Operador */}
+            <div className="text-center">
+              {station.production && station.production.websocket_data?.sessao_operador ? (
+                <div className="flex flex-col items-center gap-1">
+                  <div className="text-lg font-bold text-blue-400">
+                    {station.production.websocket_data.sessao_operador.sinais_validos || 0} válidos
+                  </div>
+                  <div className="text-lg font-bold text-red-400">
+                    {station.production.websocket_data.sessao_operador.rejeitos || 0} rejeitos
+                  </div>
+                  <div className="text-sm text-gray-400">
+                    {station.production.websocket_data.sessao_operador.sinais || 0} total
+                  </div>
+                </div>
+              ) : (
+                <div className="text-sm text-gray-500">Sem sessão</div>
+              )}
+            </div>
+
+            {/* Dados de Produção Mapa */}
+            <div className="text-center">
+              {station.production && station.production.websocket_data?.producao_mapa && station.production.websocket_data.producao_mapa.id_mapa ? (
+                <div className="flex flex-col items-center gap-1">
+                  <div className="text-lg font-bold text-purple-400">
+                    {station.production.websocket_data.producao_mapa.sinais_validos || 0} válidos
+                  </div>
+                  <div className="text-lg font-bold text-red-400">
+                    {station.production.websocket_data.producao_mapa.rejeitos || 0} rejeitos
+                  </div>
+                  <div className="text-sm text-orange-400">
+                    {station.production.websocket_data.producao_mapa.saldo_a_produzir || 0} saldo
+                  </div>
+                </div>
+              ) : (
+                <div className="text-sm text-gray-500">Sem mapa</div>
+              )}
+            </div>
+            
+            {/* Dados de Produção (Legacy) */}
             <div className="text-center">
               {station.production ? (
                 <div className="flex flex-col items-center gap-1">

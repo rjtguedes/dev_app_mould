@@ -113,6 +113,9 @@ export function OperatorDashboard({ machine, user, sessionId, onShowSettings, se
   const [showStopReasonModal, setShowStopReasonModal] = useState(false);
   const [isManualStopMode, setIsManualStopMode] = useState(false);
   
+  // ✅ Estado para armazenar dados das estações filhas (child machines/postos)
+  const [childMachinesData, setChildMachinesData] = useState<Map<number, any>>(new Map());
+  
   // ==================== WEBSOCKET HANDLERS ====================
   
   const handleSignalEvent = useCallback((event: SignalEvent) => {
@@ -490,7 +493,8 @@ export function OperatorDashboard({ machine, user, sessionId, onShowSettings, se
     getMachineData,
     forcedStop: wsForcedStop,
     forcedResume: wsForcedResume,
-    reject: wsReject
+    reject: wsReject,
+    atribuirMotivoParada: wsAtribuirMotivoParada
   } = useWebSocketSingleton({
     machineId: machine.id_maquina,
     onMachineData: handleMachineDataEvent,
@@ -991,9 +995,15 @@ export function OperatorDashboard({ machine, user, sessionId, onShowSettings, se
       sessionRecognizedRef.current = true;
     };
     const handleSessionStatus = (payload: any) => {
-      if (payload?.has_active_session || payload?.sessao) {
-        console.log('🧭 Sessão ativa confirmada via session_status - evitando start_session');
+      console.log('🧭 handleSessionStatus - Payload recebido:', payload);
+      
+      // Só marcar como reconhecida se realmente HÁ uma sessão ativa no WebSocket
+      if (payload?.has_active_session === true) {
+        console.log('✅ Sessão ativa confirmada via session_status - evitando start_session duplicado');
         sessionRecognizedRef.current = true;
+      } else {
+        console.log('⚠️ WebSocket indica que NÃO há sessão ativa - permitindo envio de start_session');
+        sessionRecognizedRef.current = false;
       }
     };
     const handleCommandSuccess = (data: any) => {
@@ -1391,10 +1401,10 @@ export function OperatorDashboard({ machine, user, sessionId, onShowSettings, se
     try {
       // 1. Buscar paradas em andamento (sem hora fim e sem motivo)
       const { count: pendingCount, error: pendingError } = await supabase
-      .from('paradas')
+      .from('paradas_redis')
       .select('*', { count: 'exact', head: true })
       .eq('id_maquina', machine.id_maquina)
-        .is('data_fim_unix', null)
+        .is('fim_unix_segundos', null)
         .is('motivo_parada', null);
 
       if (pendingError) {
@@ -1406,18 +1416,17 @@ export function OperatorDashboard({ machine, user, sessionId, onShowSettings, se
       
       if (pendingCount > 0) {
         // Há parada em andamento - buscar hora de início
-        const { data: latestStop, error: latestError } = await supabase
-          .from('paradas')
-          .select('data_inicio_unix')
+        const { data: latestStops, error: latestError } = await supabase
+          .from('paradas_redis')
+          .select('inicio_unix_segundos')
           .eq('id_maquina', machine.id_maquina)
-          .is('data_fim_unix', null)
+          .is('fim_unix_segundos', null)
       .is('motivo_parada', null)
-          .order('data_inicio_unix', { ascending: false })
-          .limit(1)
-          .single();
+          .order('inicio_unix_segundos', { ascending: false })
+          .limit(1);
 
-        if (!latestError && latestStop) {
-          setPendingStopStartTime(latestStop.data_inicio_unix);
+        if (!latestError && latestStops && latestStops.length > 0) {
+          setPendingStopStartTime(latestStops[0].inicio_unix_segundos);
         }
         
         // Limpar motivo justificado quando há parada em andamento
@@ -1426,21 +1435,21 @@ export function OperatorDashboard({ machine, user, sessionId, onShowSettings, se
         // Não há parada em andamento - buscar a última parada para verificar se foi justificada
         setPendingStopStartTime(null);
         
-        const { data: lastStop, error: lastStopError } = await supabase
-          .from('paradas')
+        const { data: lastStops, error: lastStopError } = await supabase
+          .from('paradas_redis')
           .select(`
             id,
-            data_inicio_unix,
-            data_fim_unix,
+            inicio_unix_segundos,
+            fim_unix_segundos,
             motivo_parada,
             motivos_parada(descricao)
           `)
           .eq('id_maquina', machine.id_maquina)
-          .order('data_inicio_unix', { ascending: false })
-          .limit(1)
-          .single();
+          .order('inicio_unix_segundos', { ascending: false })
+          .limit(1);
 
-        if (!lastStopError && lastStop) {
+        if (!lastStopError && lastStops && lastStops.length > 0) {
+          const lastStop = lastStops[0];
           if (lastStop.motivo_parada && lastStop.motivos_parada) {
             // Parada já foi justificada
             setJustifiedStopReason(lastStop.motivos_parada.descricao);
@@ -1713,46 +1722,48 @@ export function OperatorDashboard({ machine, user, sessionId, onShowSettings, se
   // Função para buscar a parada em andamento ou a última não justificada
   const handleShowStops = async () => {
     try {
-      // Primeiro tentar buscar parada em andamento
+      // Buscar QUALQUER parada não justificada (em andamento ou finalizada)
       let currentStop = null;
       
-      if (pendingStops > 0) {
-        // Buscar a última parada em andamento (hora fim = null e não justificada)
-        const { data: ongoingStop, error: ongoingError } = await supabase
-          .from('paradas')
-          .select('id, data_inicio_unix, motivo_parada')
-          .eq('id_maquina', machine.id_maquina)
-          .is('data_fim_unix', null)
-          .is('motivo_parada', null)
-          .order('data_inicio_unix', { ascending: false })
-          .limit(1)
-          .single();
+      console.log('🔍 handleShowStops - Iniciando busca:', {
+        pendingStops,
+        justifiedStopReason
+      });
+      
+      // Buscar a última parada não justificada (independente se está em andamento ou finalizada)
+      const { data: unjustifiedStops, error: unjustifiedError } = await supabase
+        .from('paradas_redis')
+        .select('id, inicio_unix_segundos, fim_unix_segundos, motivo_parada')
+        .eq('id_maquina', machine.id_maquina)
+        .is('motivo_parada', null)
+        .order('inicio_unix_segundos', { ascending: false })
+        .limit(1);
 
-        if (!ongoingError && ongoingStop) {
-          currentStop = ongoingStop;
-        }
-      } else if (justifiedStopReason === 'Parada não justificada') {
-        // Se não há parada em andamento mas há parada não justificada, buscar a última
-        const { data: lastUnjustifiedStop, error: lastError } = await supabase
-          .from('paradas')
-          .select('id, data_inicio_unix, motivo_parada')
-          .eq('id_maquina', machine.id_maquina)
-          .is('motivo_parada', null)
-          .order('data_inicio_unix', { ascending: false })
-          .limit(1)
-          .single();
+      console.log('🔍 handleShowStops - Resultado da busca:', {
+        error: unjustifiedError,
+        found: unjustifiedStops?.length || 0,
+        stops: unjustifiedStops
+      });
 
-        if (!lastError && lastUnjustifiedStop) {
-          currentStop = lastUnjustifiedStop;
-        }
+      if (!unjustifiedError && unjustifiedStops && unjustifiedStops.length > 0) {
+        currentStop = unjustifiedStops[0];
       }
 
       if (currentStop) {
         // Abrir modal de justificativa para esta parada
+        console.log('🔍 handleShowStops - Parada encontrada:', {
+          id: currentStop.id,
+          inicio: currentStop.inicio_unix_segundos,
+          motivo: currentStop.motivo_parada
+        });
         setIsManualStopMode(false);
         setSelectedStopId(currentStop.id);
       } else {
         // Nenhuma parada encontrada para justificar
+        console.log('⚠️ handleShowStops - Nenhuma parada encontrada:', {
+          pendingStops,
+          justifiedStopReason
+        });
         setErrorModalMessage('Não há parada para justificar no momento');
       }
     } catch (err) {
@@ -1812,10 +1823,10 @@ export function OperatorDashboard({ machine, user, sessionId, onShowSettings, se
       
       // Buscar TODAS as paradas não justificadas para DEBUG
       const { data: allUnjustifiedStops, error: allError } = await supabase
-        .from('paradas')
-        .select('id, data_inicio_unix, motivo_parada, id_maquina')
+        .from('paradas_redis')
+        .select('id, inicio_unix_segundos, motivo_parada, id_maquina')
         .is('motivo_parada', null)
-        .order('data_inicio_unix', { ascending: false })
+        .order('inicio_unix_segundos', { ascending: false })
         .limit(10);
 
       if (allError) {
@@ -1826,11 +1837,11 @@ export function OperatorDashboard({ machine, user, sessionId, onShowSettings, se
       
       // Buscar paradas não justificadas para a máquina atual
       const { data: unjustifiedStops, error } = await supabase
-        .from('paradas')
-        .select('id, data_inicio_unix, motivo_parada, id_maquina')
+        .from('paradas_redis')
+        .select('id, inicio_unix_segundos, motivo_parada, id_maquina')
         .eq('id_maquina', machine.id_maquina)
         .is('motivo_parada', null)
-        .order('data_inicio_unix', { ascending: false })
+        .order('inicio_unix_segundos', { ascending: false })
         .limit(1);
 
       if (error) {
@@ -1863,16 +1874,18 @@ export function OperatorDashboard({ machine, user, sessionId, onShowSettings, se
         }
         
         // Verificação adicional: confirmar que a parada ainda existe e não foi justificada
-        const { data: stopConfirmation, error: confirmationError } = await supabase
-          .from('paradas')
+        const { data: stopConfirmations, error: confirmationError } = await supabase
+          .from('paradas_redis')
           .select('id, id_maquina, motivo_parada')
           .eq('id', stop.id)
-          .single();
+          .limit(1);
           
-        if (confirmationError) {
+        if (confirmationError || !stopConfirmations || stopConfirmations.length === 0) {
           console.error('❌ Erro ao confirmar parada:', confirmationError);
           return;
         }
+        
+        const stopConfirmation = stopConfirmations[0];
         
         if (!stopConfirmation) {
           console.error('❌ Parada não encontrada na confirmação');
@@ -1954,16 +1967,18 @@ export function OperatorDashboard({ machine, user, sessionId, onShowSettings, se
       console.log('🔍 ID final da parada:', finalStopId);
       
       // Verificar se a parada realmente pertence à máquina atual
-      const { data: stopData, error: stopError } = await supabase
-        .from('paradas')
+      const { data: stopDataArray, error: stopError } = await supabase
+        .from('paradas_redis')
         .select('id, id_maquina')
         .eq('id', finalStopId)
-        .single();
+        .limit(1);
         
-      if (stopError) {
+      if (stopError || !stopDataArray || stopDataArray.length === 0) {
         console.error('❌ Erro ao buscar dados da parada:', stopError);
-        throw new Error('Parada não encontrada');
+        throw new Error('Parada não encontrada no banco de dados');
       }
+      
+      const stopData = stopDataArray[0];
       
       if (stopData.id_maquina !== machine.id_maquina) {
         console.error('❌ ERRO CRÍTICO: Tentativa de justificar parada de máquina diferente!', {
@@ -2055,17 +2070,17 @@ export function OperatorDashboard({ machine, user, sessionId, onShowSettings, se
         // Continuar sem o turno se houver erro
       }
 
-      // Atualizar a parada com motivo, operador e turno
-      const { error } = await supabase
-        .from('paradas')
-        .update({ 
-          motivo_parada: finalReasonId,
-          id_operador: operatorId,
-          turno: turnoId
-        })
-        .eq('id', finalStopId);
-
-      if (error) throw error;
+      // ✅ NOVO: Enviar justificação via WebSocket em vez de Supabase
+      console.log('🔧 Enviando justificação via WebSocket:', {
+        id_parada: finalStopId,
+        id_motivo: finalReasonId
+      });
+      
+      const success = wsAtribuirMotivoParada(finalStopId, finalReasonId);
+      
+      if (!success) {
+        throw new Error('Falha ao enviar comando de justificação via WebSocket');
+      }
       
       // Parada justificada com sucesso
       setErrorModalMessage('Parada justificada com sucesso!');

@@ -81,24 +81,62 @@ export function useWebSocketSingleton({
   const handleMachineUpdate = useCallback((data: MachineUpdateEvent) => {
     if (isMountedRef.current && data.target_machine_id === machineId) {
       console.log('📨 WebSocket machine_update recebido para máquina:', machineId);
-      setState(prev => ({ 
-        ...prev, 
-        connected: true, 
-        error: null,
-        machineData: data.machine_data 
-      }));
       
-      // Converter para formato antigo para compatibilidade
-      const legacyEvent = {
-        type: 'machine_data',
-        id_maquina: data.target_machine_id,
-        dados_maquina: data.machine_data,
-        timestamp: data.timestamp
-      };
+      // ✅ Verificar se é update de estação filha (child machine/posto)
+      const isChildStation = data.is_child_update === true || data.source_machine_id !== data.target_machine_id;
       
-      onMachineData?.(legacyEvent);
+      if (isChildStation) {
+        // É uma estação filha (posto) - enviar dados específicos da estação
+        console.log('👶 [NOVA] Update de ESTAÇÃO FILHA:', data.source_machine_id, data.machine_data.nome);
+        
+        // Converter para formato compatível com o dashboard atual
+        const childStationEvent = {
+          type: 'sinal',
+          id_maquina: machineId,
+          from_child: data.source_machine_id,
+          child_name: data.machine_data.nome,
+          sessao_operador: data.machine_data.sessao_operador,
+          producao_mapa: data.machine_data.producao_mapa,
+          additional_data: data.additional_data
+        };
+        
+        // Enviar evento de sinal para a estação filha
+        onSignal?.(childStationEvent);
+        
+        // Se for sinal, também enviar como machine_data para compatibilidade
+        if (data.update_type === 'sinal') {
+          const legacyEvent = {
+            type: 'machine_data',
+            id_maquina: machineId,
+            is_multipostos: true,
+            children: [data.machine_data], // Array com dados da estação específica
+            timestamp: data.timestamp
+          };
+          
+          onMachineData?.(legacyEvent);
+        }
+      } else {
+        // É a máquina principal - atualizar seus dados
+        console.log('🏭 [NOVA] Update da MÁQUINA PRINCIPAL:', data.target_machine_id);
+        setState(prev => ({ 
+          ...prev, 
+          connected: true, 
+          error: null,
+          machineData: data.machine_data 
+        }));
+        
+        // Converter para formato antigo para compatibilidade
+        const legacyEvent = {
+          type: 'machine_data',
+          id_maquina: data.target_machine_id,
+          dados_maquina: data.machine_data,
+          timestamp: data.timestamp
+        };
+        
+        onMachineData?.(legacyEvent);
+      }
     }
-  }, [machineId, onMachineData]);
+  }, [machineId, onMachineData, onSignal]);
 
   // ✅ NOVA IMPLEMENTAÇÃO - usando production_alert
   const handleProductionAlert = useCallback((data: ProductionAlertEvent) => {
@@ -181,8 +219,9 @@ export function useWebSocketSingleton({
     }
   }, [machineId]);
   
-  const iniciarSessaoOperador = useCallback((operatorId: number, turnoId: number) => {
-    const command = WebSocketCommands.iniciarSessaoOperador(machineId, operatorId, turnoId);
+  const iniciarSessaoOperador = useCallback((operatorId: number, turnoId: number, sessionId?: number) => {
+    console.log('🔌 iniciarSessaoOperador - Parâmetros:', { machineId, operatorId, turnoId, sessionId });
+    const command = WebSocketCommands.iniciarSessaoOperador(machineId, operatorId, turnoId, sessionId);
     return webSocketManager.sendCommand(command);
   }, [machineId]);
 
@@ -211,15 +250,21 @@ export function useWebSocketSingleton({
     return webSocketManager.sendCommand(command);
   }, [machineId]);
 
-  const adicionarRejeitos = useCallback((quantidade: number, motivo?: string) => {
-    const command = WebSocketCommands.adicionarRejeitos(machineId);
+  const adicionarRejeitos = useCallback((targetMachineId: number) => {
+    const command = WebSocketCommands.adicionarRejeitos(targetMachineId);
     return webSocketManager.sendCommand(command);
-  }, [machineId]);
+  }, []);
+
+  const atribuirMotivoParada = useCallback((idParada: number, idMotivo: number) => {
+    const command = WebSocketCommands.atribuirMotivoParada(idParada, idMotivo);
+    return webSocketManager.sendCommand(command);
+  }, []);
 
   // ✅ Removido getMachineData (não enviaremos consultar_maquina)
   
   const startSession = useCallback((operatorId: number, sessionId: number) => {
-    return iniciarSessaoOperador(operatorId, 1); // turno padrão
+    console.log('🔌 startSession chamado com:', { operatorId, sessionId });
+    return iniciarSessaoOperador(operatorId, 1, sessionId); // turno padrão + id_sessao
   }, [iniciarSessaoOperador]);
   
   const endSession = useCallback(() => {
@@ -294,9 +339,11 @@ export function useWebSocketSingleton({
     finalizarProducaoMapaParcial,
     finalizarProducaoMapaCompleta,
     adicionarRejeitos,
+    atribuirMotivoParada,
     
     // ✅ COMANDOS LEGADOS (compatibilidade)
     startSession,
-    endSession
+    endSession,
+    reject: adicionarRejeitos // Alias para compatibilidade
   };
 }
