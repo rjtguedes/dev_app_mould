@@ -109,3 +109,22 @@ export interface ChildMachineProduction {
     highlight_until?: number; // Timestamp até quando deve destacar a estação
   };
 }
+
+export interface SingleMachineProduction {
+  stats: any;
+  parameters: any;
+  machine: any;
+  grade: WeekMachineGrade | null;
+  produto: Product | null;
+  // Dados do WebSocket para a sessão do operador
+  websocket_data?: {
+    sessao_operador?: {
+      sinais: number;
+      rejeitos: number;
+      sinais_validos: number;
+      tempo_decorrido_segundos: number;
+      tempo_paradas_segundos: number;
+      tempo_valido_segundos: number;
+    };
+  };
+}

@@ -5,8 +5,6 @@ import { finishBatchProduction, type ProductionFinishType, addReject } from '../
 import { Sidebar } from '../components/Sidebar';
 import { JustifyStopModal } from '../components/JustifyStopModal';
 import { ProductionControl } from '../components/ProductionControl';
-import { MachineSetup } from './MachineSetup';
-import { ProductionTickets } from './ProductionTickets';
 import { ProductionCommandsPage } from './ProductionCommands';
 import { supabase } from '../lib/supabase';
 import { useRealtimeMachines } from '../hooks/useRealtimeMachines';
@@ -66,8 +64,6 @@ export function OperatorDashboard({ machine, user, sessionId, onShowSettings, se
   const [selectedStopId, setSelectedStopId] = useState<number | null>(null);
   const [stopReasons, setStopReasons] = useState<StopReason[]>([]);
   const [operatorId, setOperatorId] = React.useState<number | null>(null);
-  const [showSetup, setShowSetup] = React.useState(false);
-  const [showTickets, setShowTickets] = React.useState(false);
   const [showProductionCommands, setShowProductionCommands] = React.useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = React.useState(false);
   const [productions, setProductions] = React.useState<WeekMachine[]>([]);
@@ -174,14 +170,20 @@ export function OperatorDashboard({ machine, user, sessionId, onShowSettings, se
   // ✅ NOVO - Handler para alertas de produção
   const handleProductionAlert = useCallback((event: ProductionAlertEvent) => {
     console.log('🚨 [NOVA] Alerta de produção:', event.alert_data.message);
-    
-    if (event.alert_type === 'meta_atingida') {
-      // Meta atingida - mostrar notificação
-      alert('🎉 Meta de produção atingida!');
-    } else if (event.alert_type === 'proximo_meta') {
-      // Próximo da meta - mostrar aviso
-      alert('⚠️ Próximo da meta de produção!');
-    }
+    // Guardar alerta no estado para exibir popup customizado
+    setProductionAlert({
+      type: event.alert_type,
+      message: event.alert_data.message,
+      percentual: event.alert_data.percentual,
+      sinaisValidos: event.alert_data.sinais_validos,
+      qtProduzir: event.alert_data.qt_produzir,
+      saldo: event.alert_data.saldo,
+      targetMachineId: event.target_machine_id,
+      sourceMachineId: event.source_machine_id,
+      isChild: event.is_child_alert,
+      timestamp: event.timestamp_formatted
+    });
+    setShowProductionAlert(true);
   }, []);
 
   // ✅ NOVO - Handler para sucesso de comandos
@@ -292,6 +294,21 @@ export function OperatorDashboard({ machine, user, sessionId, onShowSettings, se
     autoConnect: true,
     shouldReconnect: true
   });
+
+  // ======= ESTADO DO POPUP DE ALERTA DE PRODUÇÃO =======
+  const [showProductionAlert, setShowProductionAlert] = useState(false);
+  const [productionAlert, setProductionAlert] = useState<{
+    type: 'meta_atingida' | 'proximo_meta';
+    message: string;
+    percentual: number;
+    sinaisValidos: number;
+    qtProduzir: number;
+    saldo?: number;
+    targetMachineId: number;
+    sourceMachineId: number;
+    isChild: boolean;
+    timestamp: string;
+  } | null>(null);
 
   // ==================== FUNÇÕES DE SESSÃO MIGRADAS ====================
 
@@ -540,8 +557,6 @@ export function OperatorDashboard({ machine, user, sessionId, onShowSettings, se
         machineId={machine.id_maquina}
         operadorId={operatorId || 0}
         onShowStops={() => {}}
-        onShowSetup={() => setShowSetup(true)}
-        onShowTickets={() => setShowTickets(true)}
         onShowSettings={onShowSettings}
         onShowProductionCommands={() => setShowProductionCommands(true)}
         onCollapsedChange={setSidebarCollapsed}
@@ -567,6 +582,53 @@ export function OperatorDashboard({ machine, user, sessionId, onShowSettings, se
 
         {/* Content */}
         <div className="flex-1 overflow-auto p-6">
+          {/* Popup de Alerta de Produção */}
+          {showProductionAlert && productionAlert && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center">
+              <div className="absolute inset-0 bg-black/50" onClick={() => setShowProductionAlert(false)} />
+              <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-xl border-2"
+                   style={{ borderColor: productionAlert.type === 'meta_atingida' ? '#16a34a' : '#f59e0b' }}>
+                <div className={`px-6 py-4 rounded-t-2xl ${productionAlert.type === 'meta_atingida' ? 'bg-green-600' : 'bg-yellow-500'}`}>
+                  <h3 className="text-white text-2xl font-bold flex items-center gap-2">
+                    {productionAlert.type === 'meta_atingida' ? '🎉 Meta atingida' : '⚠️ Próximo da meta'}
+                    <span className="ml-auto text-white/90 text-sm">{productionAlert.timestamp}</span>
+                  </h3>
+                </div>
+                <div className="p-6 space-y-4">
+                  <p className="text-gray-800 text-lg font-semibold">{productionAlert.message}</p>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="bg-gray-50 rounded-lg p-4 border">
+                      <div className="text-gray-600 text-sm">Percentual</div>
+                      <div className="text-2xl font-bold text-gray-900">{productionAlert.percentual}%</div>
+                    </div>
+                    <div className="bg-gray-50 rounded-lg p-4 border">
+                      <div className="text-gray-600 text-sm">Progresso</div>
+                      <div className="text-2xl font-bold text-gray-900">{productionAlert.sinaisValidos}/{productionAlert.qtProduzir}</div>
+                    </div>
+                    {typeof productionAlert.saldo === 'number' && (
+                      <div className="bg-gray-50 rounded-lg p-4 border col-span-2">
+                        <div className="text-gray-600 text-sm">Saldo a produzir</div>
+                        <div className="text-xl font-bold text-gray-900">{productionAlert.saldo}</div>
+                      </div>
+                    )}
+                  </div>
+                  <div className="text-sm text-gray-600">
+                    Alvo: #{productionAlert.targetMachineId} {productionAlert.isChild ? '(filha)' : '(principal)'} • Origem: #{productionAlert.sourceMachineId}
+                  </div>
+                  <div className="flex justify-end gap-3 mt-2">
+                    <button
+                      onClick={() => setShowProductionAlert(false)}
+                      className="px-4 py-2 rounded-lg border bg-white hover:bg-gray-50"
+                    >Fechar</button>
+                    <button
+                      onClick={() => { setShowProductionAlert(false); consultarProducaoMapa(); }}
+                      className={`${productionAlert.type === 'meta_atingida' ? 'bg-green-600 hover:bg-green-700' : 'bg-yellow-500 hover:bg-yellow-600'} text-white px-4 py-2 rounded-lg`}
+                    >Ver produção</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
           {/* Status de Conexão WebSocket */}
           <div className="mb-4 p-4 bg-white rounded-lg shadow">
             <div className="flex items-center justify-between">

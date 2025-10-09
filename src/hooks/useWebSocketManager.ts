@@ -60,7 +60,7 @@ class WebSocketManager {
     // Conectar ao WebSocket (nova documentação - sem parâmetros na URL)
     try {
       console.log(`🔌 WebSocketManager: Conectando a ${this.url}`);
-      console.log(`🌐 WebSocketManager: IP: 192.168.1.76, Porta: 8765`);
+      console.log(`🌐 WebSocketManager: IP: 10.200.0.184, Porta: 8765`);
       this.ws = new WebSocket(this.url);
       
       // Configurar handlers
@@ -145,7 +145,7 @@ class WebSocketManager {
   
   // Handler para conexão aberta
   private handleOpen(): void {
-    console.log('✅ WebSocketManager: Conectado com sucesso ao servidor 192.168.1.76:8765');
+    console.log('✅ WebSocketManager: Conectado com sucesso ao servidor 10.200.0.184:8765');
     console.log('🎉 WebSocketManager: Pronto para enviar comandos');
     this.reconnectAttempts = 0;
     

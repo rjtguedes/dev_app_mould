@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { webSocketManager, WebSocketCommands } from './useWebSocketManager';
+import { useWebSocketStorage } from '../lib/websocketStorage';
 import type {
   MachineUpdateEvent,
   ProductionAlertEvent,
@@ -50,6 +51,10 @@ export function useWebSocketSingleton({
   autoConnect = true,
   shouldReconnect = true
 }: UseWebSocketSingletonOptions) {
+  
+  // ✅ NOVO: Sistema de armazenamento local
+  const storage = useWebSocketStorage();
+  
   const [state, setState] = useState<WebSocketState>({
     connected: webSocketManager.isConnected() && webSocketManager.getSubscribedMachines().includes(machineId),
     error: null,
@@ -58,145 +63,6 @@ export function useWebSocketSingleton({
   
   // Referência para rastrear se o componente está montado
   const isMountedRef = useRef(true);
-  
-  // Atualizar estado de conexão
-  const handleConnectionChange = useCallback((data: any) => {
-    if (isMountedRef.current) {
-      const connected = data.connected !== undefined ? data.connected : true;
-      console.log('🔌 WebSocket estado atualizado:', connected);
-      setState(prev => ({ ...prev, connected }));
-      
-      // Notificar sobre mudanças de conexão
-      if (connected) {
-        onMachineData?.({
-          type: 'connection_established',
-          id_maquina: machineId,
-          timestamp: new Date().toISOString()
-        });
-      }
-    }
-  }, [machineId, onMachineData]);
-  
-  // ✅ NOVA IMPLEMENTAÇÃO - usando machine_update
-  const handleMachineUpdate = useCallback((data: MachineUpdateEvent) => {
-    if (isMountedRef.current && data.target_machine_id === machineId) {
-      console.log('📨 WebSocket machine_update recebido para máquina:', machineId);
-      
-      // ✅ Verificar se é update de estação filha (child machine/posto)
-      const isChildStation = data.is_child_update === true || data.source_machine_id !== data.target_machine_id;
-      
-      if (isChildStation) {
-        // É uma estação filha (posto) - enviar dados específicos da estação
-        console.log('👶 [NOVA] Update de ESTAÇÃO FILHA:', data.source_machine_id, data.machine_data.nome);
-        
-        // Converter para formato compatível com o dashboard atual
-        const childStationEvent = {
-          type: 'sinal',
-          id_maquina: machineId,
-          from_child: data.source_machine_id,
-          child_name: data.machine_data.nome,
-          sessao_operador: data.machine_data.sessao_operador,
-          producao_mapa: data.machine_data.producao_mapa,
-          additional_data: data.additional_data
-        };
-        
-        // Enviar evento de sinal para a estação filha
-        onSignal?.(childStationEvent);
-        
-        // Se for sinal, também enviar como machine_data para compatibilidade
-        if (data.update_type === 'sinal') {
-          const legacyEvent = {
-            type: 'machine_data',
-            id_maquina: machineId,
-            is_multipostos: true,
-            children: [data.machine_data], // Array com dados da estação específica
-            timestamp: data.timestamp
-          };
-          
-          onMachineData?.(legacyEvent);
-        }
-      } else {
-        // É a máquina principal - atualizar seus dados
-        console.log('🏭 [NOVA] Update da MÁQUINA PRINCIPAL:', data.target_machine_id);
-        setState(prev => ({ 
-          ...prev, 
-          connected: true, 
-          error: null,
-          machineData: data.machine_data 
-        }));
-        
-        // Converter para formato antigo para compatibilidade
-        const legacyEvent = {
-          type: 'machine_data',
-          id_maquina: data.target_machine_id,
-          dados_maquina: data.machine_data,
-          timestamp: data.timestamp
-        };
-        
-        onMachineData?.(legacyEvent);
-      }
-    }
-  }, [machineId, onMachineData, onSignal]);
-
-  // ✅ NOVA IMPLEMENTAÇÃO - usando production_alert
-  const handleProductionAlert = useCallback((data: ProductionAlertEvent) => {
-    if (isMountedRef.current && data.target_machine_id === machineId) {
-      // Converter alertas para eventos específicos
-      switch (data.alert_type) {
-        case 'meta_atingida':
-        case 'proximo_meta':
-          onMachineData?.(data);
-          break;
-        default:
-          // Evento genérico
-          onMachineData?.(data);
-      }
-    }
-  }, [machineId, onMachineData]);
-  
-  // Atualizar estado de erro
-  const handleError = useCallback((data: { error: any }) => {
-    if (isMountedRef.current) {
-      setState(prev => ({ ...prev, error: 'Erro na conexão WebSocket' }));
-    }
-    
-    // Chamar handler personalizado se fornecido
-    if (onError) {
-      onError({ type: 'error', message: 'Erro na conexão WebSocket' });
-    }
-  }, [onError]);
-
-  // Receber dados completos de máquina vindos como resposta de comando (normaliza payload)
-  const handleMachineDataResponse = useCallback((data: any) => {
-    if (!isMountedRef.current || !data) return;
-    const payload: MachineDataNew | undefined = (data as any)?.machine_data || (data as any);
-    if (payload && payload.id === machineId) {
-      console.log('📦 Dados de máquina recebidos via resposta de comando (normalizado)');
-      setState(prev => ({ ...prev, connected: true, error: null, machineData: payload }));
-      onMachineData?.({ type: 'machine_data', id_maquina: machineId, dados_maquina: payload, timestamp: Date.now() });
-    }
-  }, [machineId, onMachineData]);
-
-  // ✅ Removido consultar_maquina: backend não responde, evitar derrubar conexão
-
-  // Handler para comandos de sucesso (como subscribe)
-  const handleCommandSuccess = useCallback((data: any) => {
-    if (isMountedRef.current) {
-      console.log('✅ WebSocket comando executado com sucesso:', data.message);
-      
-      // Se for subscribe bem-sucedido, marcar como conectado
-      if (data.message && data.message.includes('Inscrito na máquina')) {
-        console.log('🔌 WebSocket marcando como conectado após subscribe bem-sucedido');
-        setState(prev => {
-          console.log('🔌 Estado anterior:', prev);
-          const newState = { ...prev, connected: true, error: null };
-          console.log('🔌 Novo estado:', newState);
-
-          return newState;
-        });
-      }
-    }
-  }, []);
   
   // Conectar ao WebSocket
   const connect = useCallback(() => {
@@ -207,16 +73,6 @@ export function useWebSocketSingleton({
   // Desconectar do WebSocket
   const disconnect = useCallback(() => {
     webSocketManager.disconnect();
-  }, [machineId]);
-
-  // Inscrever quando a conexão for confirmada
-  const handleConnectionEstablished = useCallback((data: any) => {
-    const connected = data.connected !== undefined ? data.connected : true;
-    if (connected) {
-      setTimeout(() => {
-        webSocketManager.subscribe(machineId);
-      }, 300);
-    }
   }, [machineId]);
   
   const iniciarSessaoOperador = useCallback((operatorId: number, turnoId: number, sessionId?: number) => {
@@ -271,55 +127,276 @@ export function useWebSocketSingleton({
     return finalizarSessaoOperador();
   }, [finalizarSessaoOperador]);
   
-  // Registrar listeners (evitar desinscrição em mudanças de dependências)
+  // ✅ Usar refs para callbacks - evita re-registros de listeners
+  const callbacksRef = useRef({
+    onMachineData,
+    onSignal,
+    onReject,
+    onVelocity,
+    onStop,
+    onResume,
+    onError
+  });
+
+  // Atualizar refs quando props mudarem (sem causar re-render)
   useEffect(() => {
-    webSocketManager.addListener('connection', handleConnectionChange);
-    webSocketManager.addListener('connection', handleConnectionEstablished);
-    webSocketManager.addListener('machine_data', handleMachineDataResponse);
-    webSocketManager.addListener('machine_update', handleMachineUpdate);
-    webSocketManager.addListener('production_alert', handleProductionAlert);
-    webSocketManager.addListener('command_success', handleCommandSuccess);
-    webSocketManager.addListener('error', handleError);
-
-    // Conectar automaticamente se habilitado
-    if (autoConnect) {
-      connect();
-    }
-
-    // Cleanup (não desconectar aqui para evitar derrubar a conexão em re-render)
-    return () => {
-      webSocketManager.removeListener('connection', handleConnectionChange);
-      webSocketManager.removeListener('connection', handleConnectionEstablished);
-      webSocketManager.removeListener('machine_data', handleMachineDataResponse);
-      webSocketManager.removeListener('machine_update', handleMachineUpdate);
-      webSocketManager.removeListener('production_alert', handleProductionAlert);
-      webSocketManager.removeListener('command_success', handleCommandSuccess);
-      webSocketManager.removeListener('error', handleError);
+    callbacksRef.current = {
+      onMachineData,
+      onSignal,
+      onReject,
+      onVelocity,
+      onStop,
+      onResume,
+      onError
     };
-  }, [
-    handleConnectionChange,
-    handleConnectionEstablished,
-    handleMachineUpdate,
-    handleProductionAlert,
-    handleCommandSuccess,
-    handleError,
-    autoConnect,
-    connect
-  ]);
+  });
 
-  // Cleanup exclusivo para unmount: desinscrever
+  // ✅ Marcar componente como montado
   useEffect(() => {
-    return () => {
-      webSocketManager.unsubscribe(machineId);
-    };
-  }, []);
-
-  // Cleanup ao desmontar
-  useEffect(() => {
+    isMountedRef.current = true;
     return () => {
       isMountedRef.current = false;
     };
   }, []);
+
+  // ✅ Registrar listeners UMA VEZ apenas
+  useEffect(() => {
+    console.log(`🎧 Registrando listeners para máquina ${machineId}`);
+    
+    // Wrappers que chamam handlers via refs
+    const connectionHandler = (data: any) => {
+      if (!isMountedRef.current) {
+        console.log('⚠️ Ignorando connection - componente desmontado');
+        return;
+      }
+      const connected = data.connected !== undefined ? data.connected : true;
+      console.log('🔌 WebSocket estado atualizado:', connected);
+      setState(prev => ({ ...prev, connected }));
+      
+      if (connected) {
+        callbacksRef.current.onMachineData?.({
+          type: 'connection_established',
+          id_maquina: machineId,
+          timestamp: new Date().toISOString()
+        });
+      }
+    };
+
+    const connectionEstHandler = (data: any) => {
+      const connected = data.connected !== undefined ? data.connected : true;
+      if (connected) {
+        setTimeout(() => {
+          webSocketManager.subscribe(machineId);
+        }, 300);
+      }
+    };
+
+    const machineDataHandler = (data: any) => {
+      if (!isMountedRef.current) {
+        console.log('⚠️ Ignorando machine_data - componente desmontado');
+        return;
+      }
+      if (!data) return;
+      
+      const payload: MachineDataNew | undefined = (data as any)?.machine_data || (data as any);
+      if (payload && payload.id === machineId) {
+        console.log('📦 Dados de máquina recebidos via resposta de comando');
+        setState(prev => ({ ...prev, connected: true, error: null, machineData: payload }));
+        callbacksRef.current.onMachineData?.({ 
+          type: 'machine_data', 
+          id_maquina: machineId, 
+          dados_maquina: payload, 
+          timestamp: Date.now() 
+        });
+      }
+    };
+
+    const machineUpdateHandler = (data: MachineUpdateEvent) => {
+      // ✅ Verificar se está montado E se é da máquina correta
+      if (!isMountedRef.current) {
+        console.log('⚠️ Ignorando machine_update - componente desmontado');
+        return;
+      }
+      
+      if (data.target_machine_id !== machineId) return;
+      
+      console.log('📨 WebSocket machine_update recebido para máquina:', machineId);
+      
+      // ✅ NOVO: Armazenar mensagem WebSocket
+      storage.storeMessage({
+        type: data.type,
+        target_machine_id: data.target_machine_id,
+        source_machine_id: data.source_machine_id,
+        machine_data: data.machine_data,
+        additional_data: data.additional_data,
+        timestamp: data.timestamp,
+        raw_message: data
+      });
+      
+      // ✅ NOVO: Atualizar dados da estação no armazenamento local
+      storage.updateStationFromMessage(data);
+      
+      const isChildStation = data.is_child_update === true || data.source_machine_id !== data.target_machine_id;
+      
+      if (isChildStation) {
+        console.log('👶 [NOVA] Update de ESTAÇÃO FILHA:', data.source_machine_id, data.machine_data.nome);
+        
+        const childStationEvent = {
+          type: 'sinal',
+          id_maquina: machineId,
+          from_child: data.source_machine_id,
+          child_name: data.machine_data.nome,
+          sessao_operador: data.machine_data.sessao_operador,
+          producao_mapa: data.machine_data.producao_mapa,
+          additional_data: data.additional_data
+        };
+        
+        callbacksRef.current.onSignal?.(childStationEvent);
+        
+        if (data.update_type === 'sinal') {
+          callbacksRef.current.onMachineData?.({
+            type: 'machine_data',
+            id_maquina: machineId,
+            is_multipostos: true,
+            children: [data.machine_data],
+            timestamp: data.timestamp
+          });
+        }
+      } else {
+        console.log('🏭 [NOVA] Update da MÁQUINA PRINCIPAL:', data.target_machine_id);
+        
+        // ✅ Verificar novamente antes de setState
+        if (!isMountedRef.current) return;
+        
+        setState(prev => ({ 
+          ...prev, 
+          connected: true, 
+          error: null,
+          machineData: data.machine_data 
+        }));
+        
+        if (data.update_type === 'sinal') {
+          console.log('📊 [NOVA] Evento de SINAL detectado para máquina principal:', data.additional_data);
+          callbacksRef.current.onSignal?.({
+            type: 'sinal',
+            id_maquina: data.target_machine_id,
+            from_child: null,
+            child_name: null,
+            sessao_operador: data.machine_data.sessao_operador,
+            producao_mapa: data.machine_data.producao_mapa,
+            additional_data: data.additional_data,
+            timestamp: data.timestamp
+          });
+        } else if (data.update_type === 'parada') {
+          console.log('⛔ [NOVA] Evento de PARADA detectado:', data.additional_data);
+          callbacksRef.current.onStop?.({
+            type: 'parada',
+            id_maquina: data.target_machine_id,
+            parada_id: data.additional_data?.parada_id,
+            motivo: data.additional_data?.motivo_id,
+            timestamp: data.timestamp
+          });
+        } else if (data.update_type === 'retomada') {
+          console.log('▶️ [NOVA] Evento de RETOMADA detectado:', data.additional_data);
+          callbacksRef.current.onResume?.({
+            type: 'retomada',
+            id_maquina: data.target_machine_id,
+            duracao: data.additional_data?.duracao_segundos,
+            timestamp: data.timestamp
+          });
+        } else if (data.update_type === 'velocidade') {
+          console.log('⚡ [NOVA] Evento de VELOCIDADE detectado:', data.additional_data);
+          callbacksRef.current.onVelocity?.({
+            type: 'velocidade',
+            id_maquina: data.target_machine_id,
+            velocidade: data.additional_data?.velocidade || data.machine_data.velocidade,
+            timestamp: data.timestamp
+          });
+        }
+        
+        callbacksRef.current.onMachineData?.({
+          type: 'machine_data',
+          id_maquina: data.target_machine_id,
+          dados_maquina: data.machine_data,
+          timestamp: data.timestamp
+        });
+      }
+    };
+
+    const productionAlertHandler = (data: ProductionAlertEvent) => {
+      if (!isMountedRef.current) {
+        console.log('⚠️ Ignorando production_alert - componente desmontado');
+        return;
+      }
+      if (data.target_machine_id !== machineId) return;
+      
+      switch (data.alert_type) {
+        case 'meta_atingida':
+        case 'proximo_meta':
+          callbacksRef.current.onMachineData?.(data);
+          break;
+        default:
+          callbacksRef.current.onMachineData?.(data);
+      }
+    };
+
+    const commandSuccessHandler = (data: any) => {
+      // ✅ Sempre verificar se está montado antes de setState
+      if (!isMountedRef.current) {
+        console.log('⚠️ Ignorando command_success - componente desmontado');
+        return;
+      }
+      
+      console.log('✅ WebSocket comando executado com sucesso:', data.message);
+      
+      if (data.message && data.message.includes('Inscrito na máquina')) {
+        console.log('🔌 WebSocket marcando como conectado após subscribe');
+        setState(prev => ({ ...prev, connected: true, error: null }));
+      }
+    };
+
+    const errorHandler = (data: { error: any }) => {
+      // ✅ Sempre verificar se está montado antes de setState
+      if (!isMountedRef.current) {
+        console.log('⚠️ Ignorando error - componente desmontado');
+        return;
+      }
+      setState(prev => ({ ...prev, error: 'Erro na conexão WebSocket' }));
+      callbacksRef.current.onError?.({ type: 'error', message: 'Erro na conexão WebSocket' });
+    };
+    
+    webSocketManager.addListener('connection', connectionHandler);
+    webSocketManager.addListener('connection', connectionEstHandler);
+    webSocketManager.addListener('machine_data', machineDataHandler);
+    webSocketManager.addListener('machine_update', machineUpdateHandler);
+    webSocketManager.addListener('production_alert', productionAlertHandler);
+    webSocketManager.addListener('command_success', commandSuccessHandler);
+    webSocketManager.addListener('error', errorHandler);
+
+    // Conectar automaticamente se habilitado
+    if (autoConnect) {
+      setTimeout(() => {
+        if (isMountedRef.current) {
+          connect();
+        }
+      }, 100);
+    }
+
+    // Cleanup - remover listeners ao desmontar
+    return () => {
+      console.log(`🧹 Removendo listeners da máquina ${machineId}`);
+      webSocketManager.removeListener('connection', connectionHandler);
+      webSocketManager.removeListener('connection', connectionEstHandler);
+      webSocketManager.removeListener('machine_data', machineDataHandler);
+      webSocketManager.removeListener('machine_update', machineUpdateHandler);
+      webSocketManager.removeListener('production_alert', productionAlertHandler);
+      webSocketManager.removeListener('command_success', commandSuccessHandler);
+      webSocketManager.removeListener('error', errorHandler);
+      
+      // Desinscrever da máquina
+      webSocketManager.unsubscribe(machineId);
+    };
+  }, [machineId, autoConnect, connect]);
 
   return {
     // Estado

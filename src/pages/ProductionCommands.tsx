@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import type { MapaProducaoCompleto, TalaoComMapa } from '../types/mapa_producao';
+import { webSocketManager, WebSocketCommands } from '../hooks/useWebSocketManager';
 
 interface ProductionCommandsPageProps {
   machineId: number;
@@ -72,6 +73,7 @@ export function ProductionCommandsPage({
   const [loading, setLoading] = useState(false);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [websocketProgress, setWebsocketProgress] = useState<{current: number, total: number} | null>(null);
 
   // Buscar máquinas filhas (estações físicas)
   const fetchEstacoesFisicas = async () => {
@@ -103,6 +105,17 @@ export function ProductionCommandsPage({
           direita.push(estacao);
         }
       });
+
+      // Suporte a máquinas simples (sem estações filhas): criar estação virtual
+      if (esquerda.length === 0 && direita.length === 0) {
+        esquerda.push({
+          maquina_id: machineId,
+          numero_estacao: 1,
+          nome: 'Estação Única',
+          lado: 'esquerda',
+          talaoAlocado: null
+        });
+      }
 
       setEstacoesEsquerda(esquerda);
       setEstacoesDireita(direita);
@@ -348,9 +361,8 @@ export function ProductionCommandsPage({
   }, [machineId]);
 
   useEffect(() => {
-    if (estacoesEsquerda.length > 0 || estacoesDireita.length > 0) {
-      fetchMapasProducao();
-    }
+    // Sempre buscar mapas (inclui suporte a estação virtual para máquinas simples)
+    fetchMapasProducao();
   }, [machineId, estacoesEsquerda.length, estacoesDireita.length]);
 
   useEffect(() => {
@@ -369,8 +381,9 @@ export function ProductionCommandsPage({
     try {
       const now = Math.floor(Date.now() / 1000);
       const registros = [];
+      const comandosWebSocket = [];
 
-      // Preparar todos os registros
+      // Preparar todos os registros e comandos WebSocket
       for (const [numeroEstacao, talao] of taloesSelecionados.entries()) {
         const mapaAtual = mapas.find(m => m.codmapa === talao.mapa_codmapa);
         if (!mapaAtual) continue;
@@ -380,6 +393,7 @@ export function ProductionCommandsPage({
         );
         if (!estacao) continue;
 
+        // Preparar registro para o banco
         registros.push({
           id_talao_estacao: talao.id,
           id_maquina: estacao.maquina_id,
@@ -392,15 +406,102 @@ export function ProductionCommandsPage({
           sinais_validos: 0,
           saldo_a_produzir: talao.quantidade
         });
+
+        // Buscar ID do produto do talão
+        console.log('🔍 Dados do talão para comando WebSocket:', {
+          talao_id: talao.id,
+          talao_referencia: talao.talao_referencia,
+          talao_tamanho: talao.talao_tamanho,
+          id_produto: talao.id_produto,
+          id_cor: talao.id_cor,
+          id_matriz: talao.id_matriz,
+          quantidade: talao.quantidade
+        });
+
+        // Se não temos id_produto, buscar na tabela de produtos usando a referência
+        let produtoId = talao.id_produto;
+        
+        if (!produtoId || produtoId === 0) {
+          try {
+            console.log('🔍 Buscando ID do produto para:', talao.talao_referencia);
+            const { data: produtoData, error: produtoError } = await supabase
+              .from('produtos')
+              .select('id')
+              .eq('referencia', talao.talao_referencia)
+              .single();
+            
+            if (produtoError) {
+              console.warn('⚠️ Erro ao buscar produto:', produtoError);
+            } else if (produtoData) {
+              produtoId = produtoData.id;
+              console.log('✅ ID do produto encontrado:', produtoId);
+            }
+          } catch (err) {
+            console.error('❌ Erro ao buscar ID do produto:', err);
+          }
+        }
+
+        // Se ainda não temos produtoId, usar o ID do talão como fallback
+        if (!produtoId || produtoId === 0) {
+          produtoId = talao.id;
+          console.warn('⚠️ Usando ID do talão como fallback para produto:', produtoId);
+        }
+
+        // Validar se temos um produtoId válido
+        if (produtoId && produtoId > 0) {
+          // Preparar comando WebSocket
+          const comandoWebSocket = WebSocketCommands.iniciarProducaoMapa(
+            estacao.maquina_id, // id_maquina (máquina filha da estação)
+            mapaAtual.id,       // id_mapa
+            produtoId,          // id_produto (agora com valor válido)
+            {
+              itemMapaId: talao.id, // id_item_mapa
+              corId: talao.id_cor || undefined, // id_cor (opcional)
+              matrizId: talao.id_matriz || undefined, // id_matriz (opcional)
+              qtProduzir: talao.quantidade // qt_produzir
+            }
+          );
+          
+          comandosWebSocket.push(comandoWebSocket);
+          console.log('✅ Comando WebSocket preparado para talão:', talao.talao_referencia, 'com produtoId:', produtoId);
+        } else {
+          console.error('❌ Não foi possível determinar produtoId válido para talão:', talao.talao_referencia);
+          throw new Error(`ProdutoId inválido para talão ${talao.talao_referencia}`);
+        }
       }
 
-      // Inserir todos de uma vez
+      // 1. Inserir registros no banco
       const { error: insertError } = await supabase
         .from('producao_talao_mapa')
         .insert(registros);
 
       if (insertError) throw insertError;
 
+      // 2. Enviar comandos WebSocket um por vez
+      console.log(`📤 Enviando ${comandosWebSocket.length} comandos WebSocket para iniciar produção...`);
+      setWebsocketProgress({ current: 0, total: comandosWebSocket.length });
+      
+      for (let i = 0; i < comandosWebSocket.length; i++) {
+        const comando = comandosWebSocket[i];
+        console.log(`📤 Enviando comando ${i + 1}/${comandosWebSocket.length}:`, comando);
+        
+        setWebsocketProgress({ current: i + 1, total: comandosWebSocket.length });
+        
+        const sucesso = webSocketManager.sendCommand(comando);
+        if (!sucesso) {
+          console.warn(`⚠️ Falha ao enviar comando ${i + 1} para máquina ${comando.id_maquina}`);
+        }
+        
+        // Pequeno delay entre comandos para não sobrecarregar
+        if (i < comandosWebSocket.length - 1) {
+          await new Promise(resolve => setTimeout(resolve, 100));
+        }
+      }
+
+      setWebsocketProgress(null);
+      console.log('✅ Todos os comandos WebSocket foram enviados');
+
+      // 3. Atualizar interface
       await fetchAlocacoes();
       setTaloesSelecionados(new Map());
       
@@ -409,6 +510,7 @@ export function ProductionCommandsPage({
       setError(err instanceof Error ? err.message : 'Erro ao iniciar produção');
     } finally {
       setActionLoading(null);
+      setWebsocketProgress(null);
     }
   };
 
@@ -468,7 +570,7 @@ export function ProductionCommandsPage({
               <ArrowLeft className="w-7 h-7 text-white" />
             </button>
             <div>
-              <h1 className="text-3xl font-bold text-white">🏭 Produção EVA</h1>
+              <h1 className="text-3xl font-bold text-white">🏭 Alocar Produção</h1>
               <p className="text-lg text-blue-200">Alocação de talões nas estações</p>
             </div>
           </div>
@@ -525,8 +627,8 @@ export function ProductionCommandsPage({
                     <h2 className="text-3xl font-bold text-white">📋 Mapas de Produção</h2>
                     <p className="text-slate-200 text-lg mt-1">
                       {taloesSelecionados.size > 0
-                        ? `${taloesSelecionados.size} ${taloesSelecionados.size === 1 ? 'produto selecionado' : 'produtos selecionados'} - Clique em Iniciar para alocar`
-                        : 'Selecione os produtos usando os radio buttons'}
+                        ? `${taloesSelecionados.size} ${taloesSelecionados.size === 1 ? 'estação configurada' : 'estações configuradas'} - Clique em Iniciar para alocar`
+                        : 'Selecione UM produto por estação usando os botões de seleção'}
                     </p>
                       </div>
                   {mapasAgrupados.length > 0 && (
@@ -650,7 +752,7 @@ export function ProductionCommandsPage({
                                         </thead>
                                         <tbody>
                                           {grupo.taloesEsquerda.map((talao, idx) => {
-                                            const selecionado = taloesSelecionados.has(talao.estacao_mapa_numero);
+                                            const selecionado = taloesSelecionados.get(talao.estacao_mapa_numero)?.id === talao.id;
                                             const estacaoOcupada = isEstacaoOcupada(talao.estacao_mapa_numero);
                                             
                                             return (
@@ -696,9 +798,12 @@ export function ProductionCommandsPage({
                                                         if (estacaoOcupada) return;
                                                         
                                                         const novoMapa = new Map(taloesSelecionados);
+                                                        
                                                         if (e.target.checked) {
+                                                          // Selecionar este item (substituir o anterior da mesma estação)
                                                           novoMapa.set(talao.estacao_mapa_numero, talao);
                                                         } else {
+                                                          // Desmarcar este item
                                                           novoMapa.delete(talao.estacao_mapa_numero);
                                                         }
                                                         setTaloesSelecionados(novoMapa);
@@ -743,7 +848,7 @@ export function ProductionCommandsPage({
                                         </thead>
                                         <tbody>
                                           {grupo.taloesDireita.map((talao, idx) => {
-                                            const selecionado = taloesSelecionados.has(talao.estacao_mapa_numero);
+                                            const selecionado = taloesSelecionados.get(talao.estacao_mapa_numero)?.id === talao.id;
                                             const estacaoOcupada = isEstacaoOcupada(talao.estacao_mapa_numero);
                                             
                                             return (
@@ -789,9 +894,12 @@ export function ProductionCommandsPage({
                                                         if (estacaoOcupada) return;
                                                         
                                                         const novoMapa = new Map(taloesSelecionados);
+                                                        
                                                         if (e.target.checked) {
+                                                          // Selecionar este item (substituir o anterior da mesma estação)
                                                           novoMapa.set(talao.estacao_mapa_numero, talao);
                                                         } else {
+                                                          // Desmarcar este item
                                                           novoMapa.delete(talao.estacao_mapa_numero);
                                                         }
                                                         setTaloesSelecionados(novoMapa);
@@ -856,8 +964,23 @@ export function ProductionCommandsPage({
                                                 disabled:opacity-50 disabled:cursor-not-allowed shadow-2xl hover:scale-105"
                                     >
                                       <PlayCircle className="w-12 h-12" />
-                                      <span>{actionLoading === 'iniciar' ? 'Iniciando...' : 'INICIAR'}</span>
+                                      <span>
+                                        {actionLoading === 'iniciar' 
+                                          ? websocketProgress 
+                                            ? `Enviando... ${websocketProgress.current}/${websocketProgress.total}`
+                                            : 'Iniciando...'
+                                          : 'INICIAR'
+                                        }
+                                      </span>
                                       <span className="text-sm font-normal">{taloesSelecionados.size} produtos</span>
+                                      {websocketProgress && (
+                                        <div className="w-full bg-white/20 rounded-full h-2 mt-2">
+                                          <div 
+                                            className="bg-white rounded-full h-2 transition-all duration-300"
+                                            style={{ width: `${(websocketProgress.current / websocketProgress.total) * 100}%` }}
+                                          />
+                                        </div>
+                                      )}
                                     </button>
                       </div>
                     </div>

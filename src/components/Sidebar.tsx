@@ -4,16 +4,11 @@ import { endSession, toBrasiliaTime, getBrasiliaTimestamp } from '../lib/session
 import type { Session } from '../types/session';
 import { 
   Settings, 
-  LogOut, 
-  Plus, 
-  Sigma, 
-  Pause,
+  LogOut,
   Clock,
   AlertTriangle,
   PanelLeft,
   PanelLeftClose,
-  PlusCircle,
-  Ticket,
   PauseCircle,
   User,
   X,
@@ -30,8 +25,6 @@ interface SidebarProps {
   machineId: number;
   operadorId: number;
   onShowStops: () => void;
-  onShowSetup: () => void;
-  onShowTickets: () => void;
   onShowSettings: () => void;
   onShowProductionCommands: () => void;
   onCollapsedChange: (collapsed: boolean) => void;
@@ -42,6 +35,10 @@ interface SidebarProps {
   onShowStopReasonModal: () => void;
   isMachineStopped: boolean;
   onForcedResume: () => void;
+  currentStopJustified: boolean; // ✅ NOVO
+  // ✅ NOVOS (WS)
+  wsData?: any | null;
+  onWsEndSession?: () => Promise<void>;
 }
 
 interface MachineStats {
@@ -71,8 +68,6 @@ export function Sidebar({
   machineId,
   operadorId,
   onShowStops, 
-  onShowSetup, 
-  onShowTickets, 
   onShowSettings, 
   onShowProductionCommands,
   onShowPreStopModal,
@@ -82,7 +77,10 @@ export function Sidebar({
   canPreJustify,
   onShowStopReasonModal,
   isMachineStopped,
-  onForcedResume
+  onForcedResume,
+  currentStopJustified, // ✅ NOVO
+  wsData,
+  onWsEndSession
 }: SidebarProps) {
   const [isCollapsed, setIsCollapsed] = React.useState(false);
   const [showLogoutModal, setShowLogoutModal] = React.useState(false);
@@ -207,27 +205,34 @@ export function Sidebar({
     // Armazenar o sessionId para usar no encerramento
     setCurrentSessionId(sessionToEnd);
 
-    // Carregar dados de machine_stats
-    setLoadingStats(true);
-    try {
-      const { data, error } = await supabase
-        .from('machine_stats')
-        .select('velocidade, status, ultimo_sinal')
-        .eq('id_maquina', machineId)
-        .single();
-
-      if (error) {
-        console.error('Erro ao carregar machine_stats:', error);
+    // Carregar dados: priorizar WebSocket (wsData)
+    if (wsData) {
+      setMachineStats({
+        velocidade: wsData.velocidade ?? 0,
+        status: !(wsData.parada_ativa),
+        ultimo_sinal: wsData.last_updated ?? undefined
+      });
+    } else {
+      // Fallback: machine_stats (legado)
+      setLoadingStats(true);
+      try {
+        const { data, error } = await supabase
+          .from('machine_stats')
+          .select('velocidade, status, ultimo_sinal')
+          .eq('id_maquina', machineId)
+          .single();
+        if (error) {
+          console.error('Erro ao carregar machine_stats:', error);
+          setMachineStats(null);
+        } else {
+          setMachineStats(data);
+        }
+      } catch (err) {
+        console.error('Erro ao carregar machine_stats:', err);
         setMachineStats(null);
-      } else {
-        console.log('Machine stats carregados:', data);
-        setMachineStats(data);
+      } finally {
+        setLoadingStats(false);
       }
-    } catch (err) {
-      console.error('Erro ao carregar machine_stats:', err);
-      setMachineStats(null);
-    } finally {
-      setLoadingStats(false);
     }
 
     // Carregar estatísticas da sessão
@@ -258,8 +263,18 @@ export function Sidebar({
       try {
         console.log('Encerrando sessão via Sidebar, sessionId:', currentSessionId);
         
-        // 1. Encerrar paradas pendentes
-        console.log('1. Verificando e encerrando paradas pendentes...');
+        // 1. Enviar comando WS para finalizar sessão (se disponível)
+        if (onWsEndSession) {
+          try {
+            console.log('Enviando comando WebSocket para finalizar sessão...');
+            await onWsEndSession();
+          } catch (wsErr) {
+            console.warn('Falha ao finalizar sessão via WS (seguindo com Supabase):', wsErr);
+          }
+        }
+
+        // 2. Encerrar paradas pendentes
+        console.log('2. Verificando e encerrando paradas pendentes...');
         const { data: pendingStops, error: pendingStopsError } = await supabase
           .from('paradas_redis')
           .select('id, inicio_unix_segundos')
@@ -288,8 +303,8 @@ export function Sidebar({
           console.log('Nenhuma parada pendente encontrada');
         }
 
-        // 2. Encerrar a sessão
-        console.log('2. Encerrando a sessão...');
+        // 3. Encerrar a sessão no Supabase
+        console.log('3. Encerrando a sessão...');
         await endSession(currentSessionId);
         console.log('Sessão encerrada com sucesso');
 
@@ -564,20 +579,6 @@ export function Sidebar({
       <div className="flex flex-col h-[calc(100%-5rem)] justify-between p-2">
         <div className="space-y-2">
           <button
-            onClick={onShowSetup}
-            className={`
-              w-full flex items-center gap-3 px-3 py-2.5 rounded-lg
-              hover:bg-white/10 transition-colors text-white
-              ${isCollapsed ? 'justify-center' : 'justify-start'}
-            `}
-          >
-            <PlusCircle className="w-7 h-7" />
-            <span className={`transition-opacity duration-300 ${isCollapsed ? 'opacity-0 w-0' : 'opacity-100'}`}>
-              Novo Setup
-            </span>
-          </button>
-
-          <button
             onClick={onShowProductionCommands}
             className={`
               w-full flex items-center gap-3 px-3 py-2.5 rounded-lg
@@ -588,19 +589,6 @@ export function Sidebar({
             <Activity className="w-7 h-7" />
             <span className={`transition-opacity duration-300 ${isCollapsed ? 'opacity-0 w-0' : 'opacity-100'}`}>
               Produção
-            </span>
-          </button>
-
-          <button
-            onClick={onShowTickets}
-            className={`
-              w-full flex items-center gap-3 px-3 py-2.5 rounded-lg
-              hover:bg-white/10 transition-colors text-white
-              ${isCollapsed ? 'justify-center' : 'justify-start'}
-            `}>
-            <Ticket className="w-7 h-7" />
-            <span className={`transition-opacity duration-300 ${isCollapsed ? 'opacity-0 w-0' : 'opacity-100'}`}>
-              Talões
             </span>
           </button>
 
@@ -645,37 +633,57 @@ export function Sidebar({
                 w-full flex items-center gap-3 px-4 py-4 rounded-xl
                 transition-all duration-300 text-white relative
               ${isCollapsed ? 'justify-center' : 'justify-start'}
-                ${pendingStops > 0 
-                  ? 'bg-red-600 hover:bg-red-700 shadow-lg shadow-red-500/25 border-2 border-red-400/50' 
-                  : 'bg-orange-600 hover:bg-orange-700 shadow-lg shadow-orange-500/25 border-2 border-orange-400/50'
+                ${currentStopJustified 
+                  ? 'bg-green-600 hover:bg-green-700 shadow-lg shadow-green-500/25 border-2 border-green-400/50'
+                  : pendingStops > 0 
+                    ? 'bg-red-600 hover:bg-red-700 shadow-lg shadow-red-500/25 border-2 border-red-400/50' 
+                    : 'bg-orange-600 hover:bg-orange-700 shadow-lg shadow-orange-500/25 border-2 border-orange-400/50'
                 }
                 hover:scale-105 active:scale-95
               `}
             >
               <PauseCircle className={`w-8 h-8 ${
-                pendingStops > 0 
-                  ? 'text-red-200' 
-                  : 'text-orange-200'
+                currentStopJustified
+                  ? 'text-green-200'
+                  : pendingStops > 0 
+                    ? 'text-red-200' 
+                    : 'text-orange-200'
               }`} />
               <div className={`flex flex-col items-start ${isCollapsed ? 'opacity-0 w-0' : 'opacity-100'}`}>
                 <span className={`text-base font-bold ${
-                  pendingStops > 0 
-                    ? 'text-red-100' 
-                    : 'text-orange-100'
+                  currentStopJustified
+                    ? 'text-green-100'
+                    : pendingStops > 0 
+                      ? 'text-red-100' 
+                      : 'text-orange-100'
                 }`}>
-                  {pendingStops > 0 
-                    ? 'Justificar Parada' 
-                    : 'Parada Não Justificada'
+                  {currentStopJustified
+                    ? '✓ Parada Justificada' 
+                    : pendingStops > 0 
+                      ? 'Justificar Parada' 
+                      : 'Parada Não Justificada'
                   }
                 </span>
                 
-                {pendingStops > 0 && pendingStopStartTime && (
+                {pendingStops > 0 && pendingStopStartTime && !currentStopJustified && (
                   <span className="text-sm text-red-200/80">
                     Início: {new Date(pendingStopStartTime * 1000).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
                   </span>
                 )}
                 
-                {justifiedStopReason === 'Parada não justificada' && (
+                {/* ✅ NOVO: Indicador quando a parada atual foi justificada */}
+                {currentStopJustified && (
+                  <div className="mt-2 p-2 rounded-lg border bg-green-600/20 border-green-400/30">
+                    <span className="text-xs font-medium text-green-300">
+                      ✓ Justificativa Registrada:
+                    </span>
+                    <div className="text-xs mt-1 text-green-200">
+                      Parada já foi justificada via WebSocket
+                    </div>
+                  </div>
+                )}
+                
+                {justifiedStopReason === 'Parada não justificada' && !currentStopJustified && (
                   <div className="mt-2 p-2 rounded-lg border bg-orange-600/20 border-orange-400/30">
                     <span className="text-xs font-medium text-orange-300">
                       Ação Necessária:

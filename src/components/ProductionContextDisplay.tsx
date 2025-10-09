@@ -53,78 +53,78 @@ export function ProductionContextDisplay({ type, data, machineName }: Production
   const tempoFormatado = formatarTempo(tempoDecorrido);
 
   return (
-    <div className="bg-white/5 rounded-lg border border-white/10 p-4">
+    <div className="bg-white/5 rounded-2xl border-2 border-white/10 p-6">
       {/* Header */}
-      <div className="flex items-center justify-between mb-4">
-        <div className="flex items-center gap-2">
+      <div className="flex items-center justify-between mb-6">
+        <div className="flex items-center gap-3">
           {type === 'session' ? (
             <>
-              <User className="w-5 h-5 text-blue-400" />
-              <span className="font-semibold text-blue-400">Sessão Operador</span>
+              <User className="w-6 h-6 text-blue-400" />
+              <span className="text-xl font-bold text-blue-400">Sessão Operador</span>
             </>
           ) : (
             <>
-              <Package className="w-5 h-5 text-green-400" />
-              <span className="font-semibold text-green-400">Produção Mapa</span>
+              <Package className="w-6 h-6 text-green-400" />
+              <span className="text-xl font-bold text-green-400">Produção Mapa</span>
             </>
           )}
         </div>
         
         {isProductionMap && qtProduzir && (
-          <div className="flex items-center gap-1 text-xs text-white/70">
-            <Target className="w-4 h-4" />
-            <span>Meta: {qtProduzir}</span>
+          <div className="flex items-center gap-2 text-sm text-white/80">
+            <Target className="w-5 h-5" />
+            <span className="font-semibold">Meta: {qtProduzir}</span>
           </div>
         )}
       </div>
 
       {/* Métricas principais */}
-      <div className="grid grid-cols-3 gap-3 mb-4">
+      <div className="grid grid-cols-3 gap-4 mb-6">
         {/* Sinais Válidos */}
-        <div className="text-center">
-          <div className="flex items-center justify-center gap-1 mb-1">
-            <CheckCircle2 className="w-4 h-4 text-green-400" />
-            <span className="text-xs text-white/70">Válidos</span>
+        <div className="text-center p-3 rounded-xl bg-green-500/10 border border-green-500/30">
+          <div className="flex items-center justify-center gap-2 mb-2">
+            <CheckCircle2 className="w-5 h-5 text-green-400" />
+            <span className="text-base font-semibold text-white/80">Válidos</span>
           </div>
-          <div className="text-lg font-bold text-green-400">{sinaisValidos}</div>
+          <div className="text-6xl leading-none font-black text-green-300">{sinaisValidos}</div>
         </div>
 
         {/* Rejeitos */}
-        <div className="text-center">
-          <div className="flex items-center justify-center gap-1 mb-1">
-            <AlertTriangle className="w-4 h-4 text-red-400" />
-            <span className="text-xs text-white/70">Rejeitos</span>
+        <div className="text-center p-3 rounded-xl bg-red-500/10 border border-red-500/30">
+          <div className="flex items-center justify-center gap-2 mb-2">
+            <AlertTriangle className="w-5 h-5 text-red-400" />
+            <span className="text-base font-semibold text-white/80">Rejeitos</span>
           </div>
-          <div className="text-lg font-bold text-red-400">{rejeitos}</div>
+          <div className="text-6xl leading-none font-black text-red-300">{rejeitos}</div>
         </div>
 
         {/* Total de Sinais */}
-        <div className="text-center">
-          <div className="flex items-center justify-center gap-1 mb-1">
-            <Package className="w-4 h-4 text-blue-400" />
-            <span className="text-xs text-white/70">Total</span>
+        <div className="text-center p-3 rounded-xl bg-blue-500/10 border border-blue-500/30">
+          <div className="flex items-center justify-center gap-2 mb-2">
+            <Package className="w-5 h-5 text-blue-400" />
+            <span className="text-base font-semibold text-white/80">Total</span>
           </div>
-          <div className="text-lg font-bold text-blue-400">{sinais}</div>
+          <div className="text-6xl leading-none font-black text-blue-300">{sinais}</div>
         </div>
       </div>
 
       {/* Informações específicas do ProductionMap */}
       {isProductionMap && (
-        <div className="border-t border-white/10 pt-3">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-sm text-white/70">Saldo a Produzir</span>
-            <span className="font-semibold text-orange-400">{saldoAProduzir}</span>
+        <div className="border-t border-white/10 pt-4">
+          <div className="flex items-center justify-between mb-3">
+            <span className="text-lg font-semibold text-white/80">Saldo a Produzir</span>
+            <span className="text-3xl font-black text-orange-300">{saldoAProduzir}</span>
           </div>
           
           {qtProduzir && (
             <div className="mb-2">
-              <div className="flex items-center justify-between mb-1">
-                <span className="text-xs text-white/70">Progresso</span>
-                <span className="text-xs text-white/70">{progresso}%</span>
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-sm text-white/80">Progresso</span>
+                <span className="text-sm font-semibold text-white/80">{progresso}%</span>
               </div>
-              <div className="w-full bg-white/10 rounded-full h-2">
+              <div className="w-full bg-white/10 rounded-full h-3">
                 <div 
-                  className="bg-gradient-to-r from-green-400 to-green-500 h-2 rounded-full transition-all duration-300"
+                  className="bg-gradient-to-r from-green-400 to-green-500 h-3 rounded-full transition-all duration-300"
                   style={{ width: `${Math.min(100, progresso)}%` }}
                 />
               </div>
@@ -134,11 +134,11 @@ export function ProductionContextDisplay({ type, data, machineName }: Production
       )}
 
       {/* Tempo decorrido */}
-      <div className="border-t border-white/10 pt-3">
-        <div className="flex items-center justify-center gap-2">
-          <Clock className="w-4 h-4 text-white/70" />
-          <span className="text-sm text-white/70">Tempo decorrido:</span>
-          <span className="text-sm font-semibold text-white">{tempoFormatado}</span>
+      <div className="border-t border-white/10 pt-4">
+        <div className="flex items-center justify-center gap-3">
+          <Clock className="w-5 h-5 text-white/70" />
+          <span className="text-base text-white/80">Tempo decorrido:</span>
+          <span className="text-xl font-bold text-white">{tempoFormatado}</span>
         </div>
       </div>
     </div>

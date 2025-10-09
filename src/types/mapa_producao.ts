@@ -40,6 +40,9 @@ export interface TalaoEstacao {
   posicao_ordem: number;
   matriz_alocada_id: number | null;
   tempo_ciclo_segundos: number | null;
+  id_produto?: number;
+  id_cor?: number;
+  id_matriz?: number;
   created_at: string;
   updated_at: string;
 }

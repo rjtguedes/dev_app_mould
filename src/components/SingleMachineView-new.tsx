@@ -74,26 +74,28 @@ export function SingleMachineViewNew({
   return (
     <div className="overflow-x-auto bg-black/20 rounded-xl border border-white/30 shadow-xl backdrop-blur-sm">
       <div className="p-6">
-        {/* Cabeçalho */}
+        {/* Cabeçalho - Industrial */}
         <div className="mb-6">
-          <div className="flex items-center justify-between mb-2">
-            <h3 className="text-2xl font-bold text-white drop-shadow-sm">Estação de Produção</h3>
-            <div className="flex items-center gap-2">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-4xl font-black text-white drop-shadow-sm">Estação de Produção</h3>
+            <div className="flex items-center gap-3">
               {isActive ? (
-                <div className="flex items-center gap-1 text-green-400">
-                  <Play className="w-4 h-4" />
-                  <span className="text-sm font-medium">EM PRODUÇÃO</span>
+                <div className="flex items-center gap-2 text-green-400">
+                  <Play className="w-6 h-6" />
+                  <span className="text-lg font-black">EM PRODUÇÃO</span>
                 </div>
               ) : (
-                <div className="flex items-center gap-1 text-red-400">
-                  <Pause className="w-4 h-4" />
-                  <span className="text-sm font-medium">PARADA</span>
+                <div className="flex items-center gap-2 text-red-400">
+                  <Pause className="w-6 h-6" />
+                  <span className="text-lg font-black">PARADA</span>
                 </div>
               )}
             </div>
           </div>
-          <p className="text-white/90 font-medium">Máquina: {nome}</p>
-          <p className="text-white/70 text-sm">ID: {id} | Velocidade: {velocidade}%</p>
+          <div className="flex items-center justify-between">
+            <p className="text-2xl font-bold text-white/90">Máquina: {nome}</p>
+            <p className="text-xl font-bold text-white/80">ID: {id} | Velocidade: {velocidade} pcs/h</p>
+          </div>
         </div>
 
         {/* Informações dos Contextos */}
@@ -113,24 +115,7 @@ export function SingleMachineViewNew({
           />
         </div>
 
-        {/* Informações do Turno */}
-        <div className="bg-white/5 rounded-lg border border-white/10 p-4 mb-6">
-          <h4 className="text-lg font-semibold text-white mb-3 flex items-center gap-2">
-            <Clock className="w-5 h-5 text-blue-400" />
-            Informações do Turno
-          </h4>
-          
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <span className="text-sm text-white/70">Turno Atual:</span>
-              <p className="text-white font-medium">{turnos.current || 'Não definido'}</p>
-            </div>
-            <div>
-              <span className="text-sm text-white/70">Próximo Turno:</span>
-              <p className="text-white font-medium">{turnos.next || 'Não definido'}</p>
-            </div>
-          </div>
-        </div>
+        {/* Informações do Turno removidas por solicitação */}
 
         {/* Botão de Adicionar Rejeito */}
         <div className="flex justify-center">

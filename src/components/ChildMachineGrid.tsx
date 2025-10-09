@@ -1,6 +1,7 @@
 import React from 'react';
 import { ChildMachineProduction } from '../types/production';
 import { PlusCircle } from 'lucide-react';
+import { useWebSocketStorage } from '../lib/websocketStorage';
 
 interface ChildMachineGridProps {
   productions: ChildMachineProduction[];
@@ -21,6 +22,48 @@ export function ChildMachineGrid({
   side = 'left',
   lastSignalStationId = null
 }: ChildMachineGridProps) {
+  
+  // ✅ NOVO: Sistema de armazenamento local para dados WebSocket
+  const storage = useWebSocketStorage();
+  
+  // ✅ Função helper para obter dados corretos da estação
+  const getStationDisplayData = React.useCallback((production: ChildMachineProduction) => {
+    const stationId = production.machine.id_maquina;
+    
+    // Tentar obter dados do armazenamento local primeiro
+    const localData = storage.getStationData(stationId);
+    
+    if (localData) {
+      // ✅ Usar dados do WebSocket (mais recentes e confiáveis)
+      console.log(`📊 [Display] ${production.machine.nome} - Usando dados do WebSocket:`, {
+        sinais: localData.sinais,
+        rejeitos: localData.rejeitos,
+        last_update: new Date(localData.last_update).toLocaleTimeString()
+      });
+      
+      return {
+        sinais: localData.sinais,
+        rejeitos: localData.rejeitos,
+        data_source: 'websocket'
+      };
+    } else {
+      // Fallback para dados do Supabase
+      const fallbackSinais = production.websocket_data?.sessao_operador?.sinais ?? production.stats.produzido ?? 0;
+      const fallbackRejeitos = production.websocket_data?.sessao_operador?.rejeitos ?? production.stats.rejeitos ?? 0;
+      
+      console.log(`📊 [Display] ${production.machine.nome} - Usando dados de fallback:`, {
+        sinais: fallbackSinais,
+        rejeitos: fallbackRejeitos,
+        websocket_available: !!production.websocket_data?.sessao_operador
+      });
+      
+      return {
+        sinais: fallbackSinais,
+        rejeitos: fallbackRejeitos,
+        data_source: 'fallback'
+      };
+    }
+  }, [storage]);
   
   // Para modo EVA, sempre mostrar 8 linhas
   const evaStations = React.useMemo(() => {
@@ -218,12 +261,22 @@ export function ChildMachineGrid({
           {/* Produção */}
           <div className="text-center">
             <div className="flex flex-col items-center gap-1">
-              <span className="font-bold text-lg text-green-400">
-                {production.websocket_data?.sessao_operador?.sinais || production.stats.produzido || 0}
-              </span>
-              <span className="text-gray-400 text-xs">
-                Rej: {production.websocket_data?.sessao_operador?.rejeitos || production.stats.rejeitos || 0}
-              </span>
+              {(() => {
+                const displayData = getStationDisplayData(production);
+                return (
+                  <>
+                    <span className="font-bold text-lg text-green-400">
+                      {displayData.sinais}
+                    </span>
+                    <span className={`text-xs ${displayData.data_source === 'websocket' ? 'text-green-300' : 'text-gray-400'}`}>
+                      Rej: {displayData.rejeitos}
+                      {displayData.data_source === 'websocket' && (
+                        <span className="ml-1 text-green-400" title="Dados do WebSocket">⚡</span>
+                      )}
+                    </span>
+                  </>
+                );
+              })()}
               {/* Botão de Rejeitos */}
               <button
                 onClick={() => onAddReject(production.machine.id_maquina)}

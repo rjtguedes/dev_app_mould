@@ -5,12 +5,13 @@ import { finishBatchProduction, type ProductionFinishType, addReject } from '../
 import { Sidebar } from '../components/Sidebar';
 import { JustifyStopModal } from '../components/JustifyStopModal';
 import { ProductionControl } from '../components/ProductionControl';
-import { MachineSetup } from './MachineSetup';
-import { ProductionTickets } from './ProductionTickets';
+import { WebSocketStorageDebug } from '../components/WebSocketStorageDebug';
+import { ErrorBoundary } from '../components/ErrorBoundary';
 import { ProductionCommandsPage } from './ProductionCommands';
 import { supabase } from '../lib/supabase';
 import { useRealtimeMachines } from '../hooks/useRealtimeMachines';
 import { useWebSocketSingleton } from '../hooks/useWebSocketSingleton';
+import { useWebSocketStorage } from '../lib/websocketStorage';
 import type { Machine } from '../types/machine';
 import type { User } from '@supabase/supabase-js';
 import type { StopReason } from '../types/stops';
@@ -72,8 +73,6 @@ export function OperatorDashboard({ machine, user, sessionId, onShowSettings, se
   const [selectedStopId, setSelectedStopId] = useState<number | null>(null);
   const [stopReasons, setStopReasons] = useState<StopReason[]>([]);
   const [operatorId, setOperatorId] = React.useState<number | null>(null);
-  const [showSetup, setShowSetup] = React.useState(false);
-  const [showTickets, setShowTickets] = React.useState(false);
   const [showProductionCommands, setShowProductionCommands] = React.useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = React.useState(false);
   const [productions, setProductions] = React.useState<WeekMachine[]>([]);
@@ -102,6 +101,9 @@ export function OperatorDashboard({ machine, user, sessionId, onShowSettings, se
   // Estado para rastrear a última estação que recebeu sinal
   const [lastSignalStationId, setLastSignalStationId] = useState<number | null>(null);
   
+  // ✅ NOVO: Estado para debug do armazenamento WebSocket
+  const [showWebSocketDebug, setShowWebSocketDebug] = useState(false);
+  
   // Estado para controlar se devemos tentar reconectar ao WebSocket
   const [shouldReconnect, setShouldReconnect] = useState(true);
   const [reconnectAttempts, setReconnectAttempts] = useState(0);
@@ -112,6 +114,9 @@ export function OperatorDashboard({ machine, user, sessionId, onShowSettings, se
   // Estado para controlar modal de motivos de parada
   const [showStopReasonModal, setShowStopReasonModal] = useState(false);
   const [isManualStopMode, setIsManualStopMode] = useState(false);
+  
+  // ✅ NOVO: Estado para rastrear se a parada atual foi justificada via WebSocket
+  const [currentStopJustified, setCurrentStopJustified] = useState(false);
   
   // ✅ Estado para armazenar dados das estações filhas (child machines/postos)
   const [childMachinesData, setChildMachinesData] = useState<Map<number, any>>(new Map());
@@ -124,16 +129,51 @@ export function OperatorDashboard({ machine, user, sessionId, onShowSettings, se
       id_maquina: event.id_maquina,
       from_child: event.from_child,
       child_name: event.child_name,
-      sessao_operador: event.sessao_operador
+      sessao_operador: event.sessao_operador,
+      machine_multipostos: machine.multipostos
     });
     
     if (event.id_maquina !== machine.id_maquina && !machine.multipostos) {
       return;
     }
     
+    // ✅ NOVO: Processar sinais para máquinas simples (sem from_child)
+    if (!event.from_child && !machine.multipostos) {
+      // Sinal direto da máquina simples
+      console.log(`🏭 Atualizando máquina simples ${event.id_maquina} com sinais: ${event.sessao_operador.sinais}`);
+      
+      // Atualizar estado de produção da máquina simples
+      setSingleProduction(prev => {
+        if (!prev) return prev;
+        
+        return {
+          ...prev,
+          stats: {
+            ...prev.stats,
+            produzido: event.sessao_operador.sinais,
+            rejeitos: event.sessao_operador.rejeitos
+          },
+          websocket_data: {
+            sessao_operador: {
+              sinais: event.sessao_operador.sinais,
+              rejeitos: event.sessao_operador.rejeitos,
+              sinais_validos: event.sessao_operador.sinais_validos || event.sessao_operador.sinais,
+              tempo_decorrido_segundos: event.sessao_operador.tempo_decorrido_segundos || 0,
+              tempo_paradas_segundos: event.sessao_operador.tempo_paradas_segundos || 0,
+              tempo_valido_segundos: event.sessao_operador.tempo_valido_segundos || 0
+            }
+          }
+        };
+      });
+      
+      console.log('✅ Estado da máquina simples atualizado com sinais:', event.sessao_operador.sinais);
+      
+      return;
+    }
+    
     // Atualizar contadores diretamente com os dados do evento
     if (event.from_child) {
-      // Se o sinal veio de uma máquina filha
+      // Se o sinal veio de uma máquina filha (multipostos)
       const now = Date.now();
       const HIGHLIGHT_DURATION = 3000; // Destacar por 3 segundos
       
@@ -179,7 +219,7 @@ export function OperatorDashboard({ machine, user, sessionId, onShowSettings, se
         });
       });
     }
-  }, [machine.id_maquina, machine.multipostos]);
+  }, [machine.id_maquina, machine.multipostos, machine.nome]);
 
   const handleRejectEvent = useCallback((event: RejectEvent) => {
     // Log para debug
@@ -191,6 +231,39 @@ export function OperatorDashboard({ machine, user, sessionId, onShowSettings, se
     });
     
     if (event.id_maquina !== machine.id_maquina && !machine.multipostos) {
+      return;
+    }
+    
+    // ✅ NOVO: Processar rejeitos para máquinas simples (sem from_child)
+    if (!event.from_child && !machine.multipostos) {
+      console.log(`🗑️ Atualizando máquina simples ${event.id_maquina} com rejeitos: ${event.sessao_operador.rejeitos}`);
+      
+      // Atualizar estado de produção da máquina simples
+      setSingleProduction(prev => {
+        if (!prev) return prev;
+        
+        return {
+          ...prev,
+          stats: {
+            ...prev.stats,
+            produzido: event.sessao_operador.sinais,
+            rejeitos: event.sessao_operador.rejeitos
+          },
+          websocket_data: {
+            sessao_operador: {
+              sinais: event.sessao_operador.sinais,
+              rejeitos: event.sessao_operador.rejeitos,
+              sinais_validos: event.sessao_operador.sinais_validos || event.sessao_operador.sinais,
+              tempo_decorrido_segundos: event.sessao_operador.tempo_decorrido_segundos || 0,
+              tempo_paradas_segundos: event.sessao_operador.tempo_paradas_segundos || 0,
+              tempo_valido_segundos: event.sessao_operador.tempo_valido_segundos || 0
+            }
+          }
+        };
+      });
+      
+      console.log('✅ Estado da máquina simples atualizado com rejeitos:', event.sessao_operador.rejeitos);
+      
       return;
     }
     
@@ -251,38 +324,52 @@ export function OperatorDashboard({ machine, user, sessionId, onShowSettings, se
   }, [machine.id_maquina, machine.multipostos]);
 
   const handleStopEvent = useCallback((event: StopEvent) => {
-    console.log('⛔ WebSocket - Parada detectada:', event);
+    console.log('⛔ WebSocket - Parada detectada via evento específico:', event);
     
     if (event.id_maquina !== machine.id_maquina && !machine.multipostos) {
       console.log('⚠️ Ignorando parada de outra máquina:', event.id_maquina);
       return;
     }
     
-    // Atualizar status de parada
+    // ✅ Atualizar status de parada (ambos os estados)
     setStatusParada(true);
+    setIsMachineStopped(true);
     
     // Atualizar motivo se fornecido
     if (event.motivo) {
       setJustifiedStopReason(event.motivo);
+      // Se veio com motivo, marcar como justificada
+      setCurrentStopJustified(true);
+    } else {
+      // Sem motivo = ainda não justificada
+      setCurrentStopJustified(false);
     }
     
     // Atualizar contagem de paradas pendentes
     countPendingStops();
+    
+    // Exibir notificação
+    setErrorModalMessage('⛔ Máquina parada detectada');
+    setTimeout(() => setErrorModalMessage(null), 3000);
   }, [machine.id_maquina, machine.multipostos]);
 
   const handleResumeEvent = useCallback((event: ResumeEvent) => {
-    console.log('▶️ WebSocket - Retomada detectada:', event);
+    console.log('▶️ WebSocket - Retomada detectada via evento específico:', event);
     
     if (event.id_maquina !== machine.id_maquina && !machine.multipostos) {
       console.log('⚠️ Ignorando retomada de outra máquina:', event.id_maquina);
       return;
     }
     
-    // Atualizar status de parada
+    // ✅ Atualizar status de parada (ambos os estados)
     setStatusParada(false);
+    setIsMachineStopped(false);
     
     // Limpar motivo de parada justificada
     setJustifiedStopReason(null);
+    
+    // ✅ Limpar estado de parada justificada quando a máquina retomar
+    setCurrentStopJustified(false);
     
     // Atualizar contagem de paradas pendentes
     countPendingStops();
@@ -291,8 +378,11 @@ export function OperatorDashboard({ machine, user, sessionId, onShowSettings, se
     if (event.duracao) {
       const minutos = Math.floor(event.duracao / 60);
       const segundos = event.duracao % 60;
-      setErrorModalMessage(`Parada finalizada. Duração: ${minutos}m ${segundos}s`);
+      setErrorModalMessage(`▶️ Máquina retomada. Duração da parada: ${minutos}m ${segundos}s`);
       setTimeout(() => setErrorModalMessage(null), 3000);
+    } else {
+      setErrorModalMessage('▶️ Máquina retomada');
+      setTimeout(() => setErrorModalMessage(null), 2000);
     }
   }, [machine.id_maquina, machine.multipostos]);
 
@@ -520,6 +610,19 @@ export function OperatorDashboard({ machine, user, sessionId, onShowSettings, se
     error: wsError,
     machineData: wsMachineData
   };
+
+  // Quando conectar no WebSocket, solicitar dados iniciais para popular a view nova
+  React.useEffect(() => {
+    if (wsConnected) {
+      try {
+        // Consultar sessão e produção do mapa para preencher machineData
+        wsConsultarSessao?.();
+        consultarProducaoMapa?.();
+      } catch (err) {
+        console.warn('Falha ao consultar dados iniciais via WS:', err);
+      }
+    }
+  }, [wsConnected]);
 
   // Handler para retomada forçada
   const handleForcedResume = useCallback(() => {
@@ -1009,6 +1112,14 @@ export function OperatorDashboard({ machine, user, sessionId, onShowSettings, se
     const handleCommandSuccess = (data: any) => {
       if (typeof data?.message === 'string' && data.message.includes('Sessão já estava ativa')) {
         sessionRecognizedRef.current = true;
+      }
+      
+      // ✅ NOVO: Detectar quando uma parada foi justificada via WebSocket
+      if (typeof data?.message === 'string' && data.message.includes('Motivo de parada atribuído com sucesso')) {
+        console.log('✅ Parada justificada via WebSocket confirmada!');
+        setCurrentStopJustified(true);
+        setErrorModalMessage('✅ Parada justificada com sucesso!');
+        setTimeout(() => setErrorModalMessage(null), 3000);
       }
     };
 
@@ -1934,19 +2045,6 @@ export function OperatorDashboard({ machine, user, sessionId, onShowSettings, se
     return () => clearInterval(intervalId);
   }, [preSelectedStopReason, machine.id_maquina]);
 
-  if (showSetup) {
-    return <MachineSetup 
-      machine={machine}
-      onBack={() => setShowSetup(false)}
-      operadorId={user.id}
-      sessionId={sessionId}
-    />;
-  }
-  
-  if (showTickets) {
-    return <ProductionTickets machine={machine} onBack={() => setShowTickets(false)} />;
-  }
-
   const handleJustifyStop = async (reasonId: number, stopId?: number, preSelectedReasonId?: number) => {
     try {
       console.log('🔍 handleJustifyStop - Iniciando justificação...');
@@ -2133,8 +2231,6 @@ export function OperatorDashboard({ machine, user, sessionId, onShowSettings, se
         machineId={machine.id_maquina}
         operadorId={operatorId || 0}
         onShowStops={handleShowStops}
-        onShowSetup={() => setShowSetup(true)}
-        onShowTickets={() => setShowTickets(true)}
         onShowSettings={onShowSettings}
         onShowProductionCommands={() => setShowProductionCommands(true)}
         onCollapsedChange={setSidebarCollapsed}
@@ -2145,6 +2241,9 @@ export function OperatorDashboard({ machine, user, sessionId, onShowSettings, se
         onShowStopReasonModal={handleShowStopReasonModal}
         isMachineStopped={isMachineStopped}
         onForcedResume={handleForcedResume}
+        currentStopJustified={currentStopJustified}
+        wsData={wsMachineData}
+        onWsEndSession={wsEndSession}
       />
 
       <DashboardHeader
@@ -2295,25 +2394,23 @@ export function OperatorDashboard({ machine, user, sessionId, onShowSettings, se
                   )
                 )
               ) : (
-                // Interface para máquinas de estação única - usar dados do WebSocket quando disponível
-                (() => {
-                  // Log reduzido para evitar ruído e reflows
-                  return wsState.machineData ? (
-                    <SingleMachineViewNew 
-                      machineData={wsState.machineData}
-                      onAddReject={handleAddReject}
-                      onAddRejeito={handleAddRejeito}
-                      statusParada={statusParada}
-                    />
-                  ) : (
-                    <SingleMachineView 
-                      production={singleMachineProduction}
-                      onAddReject={handleAddReject}
-                      onAddRejeito={handleAddRejeito}
-                      statusParada={statusParada}
-                    />
-                  );
-                })()
+                // Interface para máquinas de estação única
+                // Preferir sempre a versão nova quando o WebSocket estiver conectado
+                wsConnected ? (
+                  <SingleMachineViewNew 
+                    machineData={wsMachineData}
+                    onAddReject={handleAddReject}
+                    onAddRejeito={handleAddRejeito}
+                    statusParada={statusParada}
+                  />
+                ) : (
+                  <SingleMachineView 
+                    production={singleMachineProduction}
+                    onAddReject={handleAddReject}
+                    onAddRejeito={handleAddRejeito}
+                    statusParada={statusParada}
+                  />
+                )
               )
             )}
           </div>
@@ -2369,6 +2466,27 @@ export function OperatorDashboard({ machine, user, sessionId, onShowSettings, se
 
       {/* Status do WebSocket */}
       {renderWebSocketStatus()}
+
+      {/* ✅ NOVO: Debug do Armazenamento WebSocket */}
+      <ErrorBoundary
+        fallback={
+          <div className="fixed bottom-4 right-4 bg-red-900/20 border border-red-500/30 rounded-lg p-4 z-50">
+            <p className="text-red-400 text-sm">Erro no debug WebSocket</p>
+            <button
+              onClick={() => setShowWebSocketDebug(false)}
+              className="mt-2 bg-red-600 hover:bg-red-700 text-white px-2 py-1 rounded text-xs"
+            >
+              Fechar
+            </button>
+          </div>
+        }
+      >
+        <WebSocketStorageDebug
+          parentMachineId={machine.id_maquina}
+          isVisible={showWebSocketDebug}
+          onToggle={() => setShowWebSocketDebug(!showWebSocketDebug)}
+        />
+      </ErrorBoundary>
 
     </div>
   );
