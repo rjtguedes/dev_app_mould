@@ -17,6 +17,11 @@ export interface WebSocketConnectionInfo {
  * Obtém a URL do WebSocket baseado no ambiente atual
  * 
  * MUDANÇA: Backend atualizado para WSS na porta 443
+ * 
+ * ESTRATÉGIA (em ordem de prioridade):
+ * 1. Variável de ambiente VITE_WS_URL (se definida)
+ * 2. Mesmo domínio do site (IDEAL para PWA)
+ * 3. IP VPN padrão para localhost
  */
 export function getWebSocketURL(): string {
   // 1. Primeiro, tentar variável de ambiente (prioridade máxima)
@@ -26,24 +31,36 @@ export function getWebSocketURL(): string {
     return envUrl;
   }
 
-  // 2. NOVO: Backend usa WSS (porta 443) por padrão
-  const protocol = 'wss:';  // Sempre WSS agora (criptografado)
-  const port = import.meta.env.VITE_WS_PORT || '443';  // Porta HTTPS padrão
-
-  // 3. Obter hostname atual
+  // 2. Detectar protocolo do site atual
+  const isHTTPS = window.location.protocol === 'https:';
+  const protocol = isHTTPS ? 'wss:' : 'ws:';
+  
+  // 3. Obter hostname e porta atuais
   const hostname = window.location.hostname;
+  const sitePort = window.location.port;
 
-  // 4. Casos especiais
-  // Se for localhost/127.0.0.1, usar IP VPN padrão com WSS
-  if (hostname === 'localhost' || hostname === '127.0.0.1') {
+  // 4. CASOS ESPECIAIS
+  
+  // 4a. Se for localhost/127.0.0.1 em dev (porta 5173)
+  if ((hostname === 'localhost' || hostname === '127.0.0.1') && sitePort === '5173') {
     const defaultUrl = `wss://10.200.0.184:443`;
-    console.log('🔌 WebSocket: Localhost detectado, usando IP VPN WSS:', defaultUrl);
+    console.log('🔌 WebSocket: Desenvolvimento local detectado, usando IP VPN:', defaultUrl);
     return defaultUrl;
   }
+  
+  // 4b. Se site está em 10.200.0.184 (mesmo servidor)
+  // Usar MESMO domínio e protocolo (IDEAL para PWA)
+  if (hostname === '10.200.0.184' || hostname.includes('industrack')) {
+    // Tentar caminho /ws no mesmo domínio primeiro
+    const sameDomainUrl = `${protocol}//${hostname}${isHTTPS ? '' : ':443'}/ws`;
+    console.log('🔌 WebSocket: Usando mesmo domínio do site (PWA-friendly):', sameDomainUrl);
+    return sameDomainUrl;
+  }
 
-  // 5. Se tiver um hostname válido, usar o mesmo host com WSS
-  const dynamicUrl = `${protocol}//${hostname}:${port}`;
-  console.log('🔌 WebSocket: Usando hostname dinâmico WSS:', dynamicUrl);
+  // 5. Fallback: usar mesmo host com porta 443
+  const wsPort = import.meta.env.VITE_WS_PORT || '443';
+  const dynamicUrl = `${protocol}//${hostname}:${wsPort}`;
+  console.log('🔌 WebSocket: Usando hostname dinâmico:', dynamicUrl);
   return dynamicUrl;
 }
 
