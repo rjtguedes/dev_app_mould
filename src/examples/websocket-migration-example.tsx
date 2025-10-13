@@ -298,3 +298,5 @@ adicionarRejeitos(); // ✅ Comando padronizado
 */
 
 export default MachineDashboard;
+
+

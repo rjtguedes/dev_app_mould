@@ -1,0 +1,57 @@
+{
+  "appId": "com.seuapp.ihm",
+  "appName": "IHM Mould",
+  "webDir": "dist",
+  "bundledWebRuntime": false,
+  
+  "server": {
+    // IMPORTANTE: Permitir cleartext para WebSocket WS
+    "cleartext": true,
+    
+    // IPs/domínios permitidos para navegação
+    "allowNavigation": [
+      "10.200.0.184",
+      "192.168.*",
+      "localhost",
+      "127.0.0.1"
+    ],
+    
+    // URL do servidor (desenvolvimento)
+    // Descomente e ajuste se necessário
+    // "url": "http://192.168.1.100:5173",
+    
+    // Se usar live reload durante desenvolvimento
+    "androidScheme": "http"
+  },
+  
+  "android": {
+    // Permitir mixed content (HTTP em HTTPS)
+    "allowMixedContent": true,
+    
+    // Habilitar WebView debugging (apenas dev)
+    "webContentsDebuggingEnabled": true,
+    
+    // Versão mínima do Android (API 22 = Android 5.1)
+    "minWebViewVersion": 55,
+    
+    // Build config
+    "buildOptions": {
+      "releaseType": "APK"
+    }
+  },
+  
+  "plugins": {
+    "SplashScreen": {
+      "launchShowDuration": 2000,
+      "backgroundColor": "#1e293b",
+      "showSpinner": false
+    }
+  }
+}
+
+// INSTRUÇÕES DE USO:
+// 1. Se estiver usando Capacitor, renomeie para capacitor.config.json
+// 2. Ajuste appId, appName conforme seu app
+// 3. Execute: npx cap sync android
+// 4. Recompile o app
+

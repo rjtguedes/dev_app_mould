@@ -19,13 +19,14 @@ import type {
   ConsultarProducaoMapaCommand
 } from '../types/websocket-new';
 import { DEFAULT_WS_CONFIG } from '../types/websocket-new';
+import { getWebSocketURL, logWebSocketDiagnostics } from '../lib/websocketConfig';
 
 // Classe singleton para gerenciar conexão WebSocket
 class WebSocketManager {
   private static instance: WebSocketManager;
   private ws: WebSocket | null = null;
   private subscribedMachines: Set<number> = new Set();
-  private url: string = DEFAULT_WS_CONFIG.url;
+  private url: string = getWebSocketURL(); // Usar URL dinâmica
   private listeners: Map<string, Set<(data: any) => void>> = new Map();
   private reconnectTimeout: NodeJS.Timeout | null = null;
   private reconnectAttempts: number = 0;
@@ -59,8 +60,9 @@ class WebSocketManager {
     
     // Conectar ao WebSocket (nova documentação - sem parâmetros na URL)
     try {
+      // Exibir diagnóstico de conexão
+      logWebSocketDiagnostics();
       console.log(`🔌 WebSocketManager: Conectando a ${this.url}`);
-      console.log(`🌐 WebSocketManager: IP: 10.200.0.184, Porta: 8765`);
       this.ws = new WebSocket(this.url);
       
       // Configurar handlers

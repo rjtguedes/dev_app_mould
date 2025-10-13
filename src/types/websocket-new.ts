@@ -261,9 +261,10 @@ export interface WebSocketConfig {
 }
 
 // Configuração padrão conforme nova documentação
+// ATUALIZADO: Backend agora usa WSS (WebSocket Secure) na porta 443
 export const DEFAULT_WS_CONFIG: WebSocketConfig = {
-  url: 'ws://10.200.0.184:8765', // Servidor WebSocket correto
-  port: 8765,
+  url: 'wss://10.200.0.184:443', // Servidor WebSocket com SSL/TLS
+  port: 443,
   reconnectAttempts: 5,
   reconnectInterval: 5000,
   pingTimeout: 60000

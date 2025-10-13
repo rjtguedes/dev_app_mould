@@ -311,3 +311,5 @@ O frontend agora:
 - Frontend conecta ✅
 - Frontend se inscreve ✅
 - Mas não recebe eventos ❌
+
+

@@ -97,3 +97,5 @@ export const exampleMachineDataEmpty: MachineDataNew = {
   producao_mapa: null,
   status: false
 };
+
+

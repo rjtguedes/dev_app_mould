@@ -1,0 +1,77 @@
+
+╔═══════════════════════════════════════════════════════════════════╗
+║                                                                   ║
+║   ✅ PROBLEMA WSS IDENTIFICADO E RESOLVIDO                       ║
+║                                                                   ║
+╚═══════════════════════════════════════════════════════════════════╝
+
+❌ ERRO:
+   WebSocket connection to 'wss://10.200.0.184/' failed
+
+🎯 CAUSA:
+   Navegador bloqueia WSS com certificado auto-assinado
+
+✅ SOLUÇÃO EM 3 PASSOS:
+
+   1. Abrir em nova aba:
+      https://10.200.0.184/health
+
+   2. Aceitar aviso de segurança:
+      Chrome: "Avançado" → "Prosseguir"
+      Firefox: "Avançado" → "Aceitar o risco"
+      Safari: "Mostrar detalhes" → "Visitar"
+
+   3. Voltar ao app e recarregar (Ctrl+R)
+
+═══════════════════════════════════════════════════════════════════
+
+💡 SOLUÇÃO AUTOMÁTICA (Recomendado):
+
+   Adicione no seu app:
+
+   import { SSLHealthCheck } from './components/SSLHealthCheck';
+   
+   <SSLHealthCheck />  // ← Logo no início do componente
+
+   Vai detectar e avisar automaticamente se certificado não foi aceito!
+
+═══════════════════════════════════════════════════════════════════
+
+📚 ARQUIVOS CRIADOS PARA VOCÊ:
+
+   1. ERRO_WSS_RESOLVIDO.md ................. Guia rápido
+   2. SOLUCAO_WSS_NAVEGADOR.md .............. Guia completo
+   3. src/components/SSLHealthCheck.tsx ..... Componente auto
+   4. LEIA-ME_PRIMEIRO.md ................... Atualizado
+
+═══════════════════════════════════════════════════════════════════
+
+🔍 IMPORTANTE ENTENDER:
+
+   🌐 NAVEGADOR DESKTOP:
+      ❌ Bloqueia certificado auto-assinado
+      ⚠️ Precisa aceitar manualmente (1x)
+      🔒 Protege usuário
+
+   📱 ANDROID WEBVIEW:
+      ✅ Aceita certificado automaticamente
+      ✅ Funciona direto
+      ✅ Nenhuma configuração necessária
+
+   Por isso funciona no Android mas não no navegador!
+
+═══════════════════════════════════════════════════════════════════
+
+🧪 TESTE RÁPIDO:
+
+   Console do navegador (F12):
+
+   const ws = new WebSocket('wss://10.200.0.184:443');
+   ws.onopen = () => console.log('✅ Conectado!');
+
+═══════════════════════════════════════════════════════════════════
+
+✨ Após aceitar o certificado, tudo funciona perfeitamente! ✨
+
+═══════════════════════════════════════════════════════════════════
+

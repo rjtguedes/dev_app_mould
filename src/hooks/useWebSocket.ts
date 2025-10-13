@@ -13,9 +13,10 @@ import type {
   EndSessionAckEvent,
   ErrorEvent
 } from '../types/websocket';
+import { getWebSocketURL, logWebSocketDiagnostics } from '../lib/websocketConfig';
 
 // Configuração do WebSocket
-const WS_URL = import.meta.env.VITE_WS_URL || 'ws://10.200.0.184:8765';
+const WS_URL = getWebSocketURL();
 const BASE_RECONNECT_INTERVAL = 5000; // 5 segundos (base)
 const MAX_RECONNECT_INTERVAL = 60000; // 1 minuto (máximo)
 const MAX_RECONNECT_ATTEMPTS = 5; // Reduzido para 5 tentativas
@@ -169,6 +170,8 @@ export function useWebSocket({
       return;
     }
 
+    // Exibir diagnóstico de conexão
+    logWebSocketDiagnostics();
     console.log(`🔌 Conectando ao WebSocket: ${WS_URL}?machine_id=${machineId}`);
     
     // Só atualizar estado se o componente estiver montado
