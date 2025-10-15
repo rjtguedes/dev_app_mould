@@ -6,9 +6,19 @@ interface ProductionContextDisplayProps {
   type: 'session' | 'production_map';
   data: OperatorSession | ProductionMap | null;
   machineName: string;
+  onEncerrarParcial?: () => void;
+  onEncerrarTotal?: () => void;
+  machineId?: number;
 }
 
-export function ProductionContextDisplay({ type, data, machineName }: ProductionContextDisplayProps) {
+export function ProductionContextDisplay({ 
+  type, 
+  data, 
+  machineName, 
+  onEncerrarParcial, 
+  onEncerrarTotal, 
+  machineId 
+}: ProductionContextDisplayProps) {
   if (!data) {
     return (
       <div className="bg-white/5 rounded-lg border border-white/10 p-4">
@@ -134,13 +144,35 @@ export function ProductionContextDisplay({ type, data, machineName }: Production
       )}
 
       {/* Tempo decorrido */}
-      <div className="border-t border-white/10 pt-4">
+      <div className="border-t border-white/10 pt-4 mb-4">
         <div className="flex items-center justify-center gap-3">
           <Clock className="w-5 h-5 text-white/70" />
           <span className="text-base text-white/80">Tempo decorrido:</span>
           <span className="text-xl font-bold text-white">{tempoFormatado}</span>
         </div>
       </div>
+
+      {/* Botões de ação para ProductionMap */}
+      {isProductionMap && onEncerrarParcial && onEncerrarTotal && (
+        <div className="border-t border-white/10 pt-4">
+          <div className="flex gap-3">
+            <button
+              onClick={onEncerrarParcial}
+              className="flex-1 flex items-center justify-center gap-2 px-4 py-3 bg-orange-600 hover:bg-orange-700 text-white rounded-lg font-semibold transition-all duration-200 hover:shadow-lg hover:shadow-orange-500/25"
+            >
+              <Package className="w-5 h-5" />
+              Encerrar Parcial
+            </button>
+            <button
+              onClick={onEncerrarTotal}
+              className="flex-1 flex items-center justify-center gap-2 px-4 py-3 bg-red-600 hover:bg-red-700 text-white rounded-lg font-semibold transition-all duration-200 hover:shadow-lg hover:shadow-red-500/25"
+            >
+              <CheckCircle2 className="w-5 h-5" />
+              Encerrar Total
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

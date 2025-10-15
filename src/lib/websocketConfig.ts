@@ -3,7 +3,7 @@
  * Detecta automaticamente o melhor endereço baseado no ambiente
  * 
  * IMPORTANTE: Backend agora usa WSS (WebSocket Secure) com SSL/TLS
- * URL padrão: wss://10.200.0.184:443
+ * URL padrão: wss://industrackwss.vps-kinghost.net:8443
  */
 
 export interface WebSocketConnectionInfo {
@@ -16,12 +16,12 @@ export interface WebSocketConnectionInfo {
 /**
  * Obtém a URL do WebSocket baseado no ambiente atual
  * 
- * MUDANÇA: Backend atualizado para WSS na porta 443
+ * MUDANÇA: Backend atualizado para WSS com domínio público
  * 
  * ESTRATÉGIA (em ordem de prioridade):
  * 1. Variável de ambiente VITE_WS_URL (se definida)
- * 2. Mesmo domínio do site (IDEAL para PWA)
- * 3. IP VPN padrão para localhost
+ * 2. Domínio público padrão: wss://industrackwss.vps-kinghost.net:8443
+ * 3. Mesmo domínio do site (fallback)
  */
 export function getWebSocketURL(): string {
   // 1. Primeiro, tentar variável de ambiente (prioridade máxima)
@@ -31,37 +31,31 @@ export function getWebSocketURL(): string {
     return envUrl;
   }
 
-  // 2. Detectar protocolo do site atual
-  const isHTTPS = window.location.protocol === 'https:';
-  const protocol = isHTTPS ? 'wss:' : 'ws:';
+  // 2. URL padrão com domínio público
+  const defaultUrl = 'wss://industrackwss.vps-kinghost.net:8443';
   
-  // 3. Obter hostname e porta atuais
+  // 3. Verificar se está em desenvolvimento local
   const hostname = window.location.hostname;
   const sitePort = window.location.port;
-
-  // 4. CASOS ESPECIAIS
   
-  // 4a. Se for localhost/127.0.0.1 em dev (porta 5173)
   if ((hostname === 'localhost' || hostname === '127.0.0.1') && sitePort === '5173') {
-    const defaultUrl = `wss://10.200.0.184:443`;
-    console.log('🔌 WebSocket: Desenvolvimento local detectado, usando IP VPN:', defaultUrl);
+    console.log('🔌 WebSocket: Desenvolvimento local detectado, usando domínio público:', defaultUrl);
     return defaultUrl;
   }
   
-  // 4b. Se site está em 10.200.0.184 (mesmo servidor)
-  // Usar MESMO domínio e protocolo (IDEAL para PWA)
-  if (hostname === '10.200.0.184' || hostname.includes('industrack')) {
+  // 4. Se site está no mesmo domínio do WebSocket, tentar usar mesmo domínio
+  if (hostname.includes('industrack') || hostname.includes('vps-kinghost')) {
     // Tentar caminho /ws no mesmo domínio primeiro
-    const sameDomainUrl = `${protocol}//${hostname}${isHTTPS ? '' : ':443'}/ws`;
-    console.log('🔌 WebSocket: Usando mesmo domínio do site (PWA-friendly):', sameDomainUrl);
+    const isHTTPS = window.location.protocol === 'https:';
+    const protocol = isHTTPS ? 'wss:' : 'ws:';
+    const sameDomainUrl = `${protocol}//${hostname}/ws`;
+    console.log('🔌 WebSocket: Usando mesmo domínio do site:', sameDomainUrl);
     return sameDomainUrl;
   }
 
-  // 5. Fallback: usar mesmo host com porta 443
-  const wsPort = import.meta.env.VITE_WS_PORT || '443';
-  const dynamicUrl = `${protocol}//${hostname}:${wsPort}`;
-  console.log('🔌 WebSocket: Usando hostname dinâmico:', dynamicUrl);
-  return dynamicUrl;
+  // 5. Fallback: usar domínio público padrão
+  console.log('🔌 WebSocket: Usando domínio público padrão:', defaultUrl);
+  return defaultUrl;
 }
 
 /**
@@ -75,7 +69,7 @@ export function getWebSocketConnectionInfo(): WebSocketConnectionInfo {
     url,
     isSecure: urlObj.protocol === 'wss:',
     host: urlObj.hostname,
-    port: parseInt(urlObj.port || '8765', 10)
+    port: parseInt(urlObj.port || '8443', 10)
   };
 }
 
@@ -95,7 +89,7 @@ export function diagnoseWebSocketURL(): {
   // Verificar se está usando WSS (novo backend requer)
   if (!info.isSecure) {
     warnings.push('⚠️ Backend agora requer WSS (WebSocket Secure)');
-    recommendations.push('Atualize para wss:// na porta 443');
+    recommendations.push('Atualize para wss:// na porta 8443');
   }
 
   // Verificar se está em Android com certificado auto-assinado

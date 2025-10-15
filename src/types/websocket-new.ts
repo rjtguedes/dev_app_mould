@@ -261,10 +261,10 @@ export interface WebSocketConfig {
 }
 
 // Configuração padrão conforme nova documentação
-// ATUALIZADO: Backend agora usa WSS (WebSocket Secure) na porta 443
+// ATUALIZADO: Backend agora usa WSS (WebSocket Secure) com domínio público
 export const DEFAULT_WS_CONFIG: WebSocketConfig = {
-  url: 'wss://10.200.0.184:443', // Servidor WebSocket com SSL/TLS
-  port: 443,
+  url: 'wss://industrackwss.vps-kinghost.net:8443', // Servidor WebSocket com SSL/TLS
+  port: 8443,
   reconnectAttempts: 5,
   reconnectInterval: 5000,
   pingTimeout: 60000

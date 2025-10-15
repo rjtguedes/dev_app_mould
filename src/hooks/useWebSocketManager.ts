@@ -147,7 +147,7 @@ class WebSocketManager {
   
   // Handler para conexão aberta
   private handleOpen(): void {
-    console.log('✅ WebSocketManager: Conectado com sucesso ao servidor 10.200.0.184:8765');
+    console.log(`✅ WebSocketManager: Conectado com sucesso ao servidor ${this.url}`);
     console.log('🎉 WebSocketManager: Pronto para enviar comandos');
     this.reconnectAttempts = 0;
     
@@ -195,10 +195,42 @@ class WebSocketManager {
     return true;
   }
   
+  // Converter Blob para string
+  private async blobToString(blob: Blob): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result as string);
+      reader.onerror = reject;
+      reader.readAsText(blob);
+    });
+  }
+
   // Handler para mensagens recebidas (nova documentação)
   private handleMessage(event: MessageEvent): void {
     try {
-      const data: WebSocketEventNew | WebSocketResponse | WebSocketErrorResponse = JSON.parse(event.data);
+      // Tratar mensagens como Blob ou string
+      if (event.data instanceof Blob) {
+        // Se for Blob, converter para texto de forma assíncrona
+        this.blobToString(event.data).then(messageData => {
+          this.processMessage(messageData);
+        }).catch(error => {
+          console.error('❌ WebSocketManager: Erro ao converter Blob:', error);
+        });
+        return;
+      }
+      
+      const messageData = event.data;
+      this.processMessage(messageData);
+    } catch (error) {
+      console.error('❌ WebSocketManager: Erro ao processar mensagem:', error);
+    }
+  }
+
+  // Processar mensagem já convertida para string
+  private processMessage(messageData: string): void {
+    try {
+      
+      const data: WebSocketEventNew | WebSocketResponse | WebSocketErrorResponse = JSON.parse(messageData);
       
       // Log de debug para entender a estrutura
       console.log('📥 WebSocketManager: Mensagem recebida:', data);

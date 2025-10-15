@@ -8,13 +8,17 @@ interface SingleMachineViewNewProps {
   onAddReject: (gradeId: number) => Promise<void>;
   onAddRejeito?: () => Promise<void>;
   statusParada?: boolean;
+  onEncerrarParcial?: () => Promise<void>;
+  onEncerrarTotal?: () => Promise<void>;
 }
 
 export function SingleMachineViewNew({ 
   machineData, 
   onAddReject, 
   onAddRejeito, 
-  statusParada = false 
+  statusParada = false,
+  onEncerrarParcial,
+  onEncerrarTotal
 }: SingleMachineViewNewProps) {
   const [confirming, setConfirming] = useState<boolean>(false);
   const [confirmMessage, setConfirmMessage] = useState<string | null>(null);
@@ -105,6 +109,9 @@ export function SingleMachineViewNew({
             type="production_map" 
             data={producao_mapa} 
             machineName={nome}
+            onEncerrarParcial={onEncerrarParcial}
+            onEncerrarTotal={onEncerrarTotal}
+            machineId={id}
           />
 
           {/* Sessão Operador */}

@@ -7,7 +7,11 @@
     "dev": "vite",
     "build": "vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "android": "npm run build && npx cap sync android && npx cap open android",
+    "android:run": "npm run build && npx cap sync android && npx cap run android",
+    "android:sync": "npx cap sync android",
+    "ios": "npm run build && npx cap sync ios && npx cap open ios"
   },
   "dependencies": {
     "@fingerprintjs/fingerprintjs": "^4.6.2",

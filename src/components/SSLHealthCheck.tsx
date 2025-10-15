@@ -13,7 +13,7 @@ export function SSLHealthCheck() {
   const [checkAttempts, setCheckAttempts] = useState(0);
 
   // URL do servidor SSL
-  const SSL_URL = 'https://10.200.0.184/health';
+  const SSL_URL = 'https://industrackwss.vps-kinghost.net:8443/health';
 
   const checkSSL = async () => {
     setChecking(true);
