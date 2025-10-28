@@ -2,6 +2,7 @@ import React from 'react';
 import { useState, useEffect } from 'react';
 import { Loader2, Power, Gauge, Box, RefreshCcw } from 'lucide-react';
 import { OperatorDashboard } from './OperatorDashboard';
+import { TestSSEInline } from './TestSSEInline';
 import { useRealtimeMachines } from '../hooks/useRealtimeMachines';
 import { supabase } from '../lib/supabase';
 import { getMacAddress } from '../lib/device';
@@ -393,13 +394,20 @@ export function MachineSelection({ initialMachine, onShowSettings, secondaryOper
 
   // Show dashboard if machine is selected
   if (selectedMachine) {
-    return <OperatorDashboard 
-      machine={selectedMachine} 
-      user={user}
-      sessionId={isAdminMode ? null : sessionId} // Para admin, sempre null
-      onShowSettings={onShowSettings}
-      secondaryOperator={secondaryOperator}
-    />;
+    return (
+      <>
+        <OperatorDashboard 
+          machine={selectedMachine} 
+          user={user}
+          sessionId={isAdminMode ? null : sessionId} // Para admin, sempre null
+          onShowSettings={onShowSettings}
+          secondaryOperator={secondaryOperator}
+        />
+        
+        {/* 🧪 Teste SSE Inline */}
+        <TestSSEInline machineId={selectedMachine.id_maquina} />
+      </>
+    );
   }
 
   if (loading) {

@@ -131,3 +131,6 @@ production_alert    // Alertas de produção (meta atingida, etc.)
 **🚀 A migração foi concluída com sucesso total! O aplicativo IHM está funcionando perfeitamente e pronto para usar a nova implementação WebSocket quando o servidor estiver disponível.**
 
 
+
+
+

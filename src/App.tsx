@@ -4,6 +4,9 @@ import { Loader2, CheckCircle2 } from 'lucide-react';
 import { NumPad } from './components/NumPad';
 import { MachineSelection } from './pages/MachineSelection';
 import { Settings } from './pages/Settings';
+import { TestSSE } from './pages/TestSSE';
+import { TestContextoInicial } from './pages/TestContextoInicial';
+import { DiagnosticoConexao } from './pages/DiagnosticoConexao';
 import { supabase, handleJWTError } from './lib/supabase';
 import { decryptCredentials } from './lib/crypto';
 import { useWakeLock } from './hooks/useWakeLock';
@@ -21,7 +24,28 @@ function App() {
   const [initialLoading, setInitialLoading] = useState(true);
   const [secondaryOperator, setSecondaryOperator] = useState<{ id: number; nome: string } | null>(null);
   const [twoOperators, setTwoOperators] = useState(false);
+  const [showTestSSE, setShowTestSSE] = useState(false);
+  const [showTestContexto, setShowTestContexto] = useState(false);
+  const [showDiagnostico, setShowDiagnostico] = useState(false);
   useWakeLock();
+
+  // 🧪 Atalhos para testes (Ctrl+Shift+S, Ctrl+Shift+C, Ctrl+Shift+D)
+  useEffect(() => {
+    const handleKeyPress = (e: KeyboardEvent) => {
+      if (e.ctrlKey && e.shiftKey && e.key === 'S') {
+        e.preventDefault();
+        setShowTestSSE(prev => !prev);
+      } else if (e.ctrlKey && e.shiftKey && e.key === 'C') {
+        e.preventDefault();
+        setShowTestContexto(prev => !prev);
+      } else if (e.ctrlKey && e.shiftKey && e.key === 'D') {
+        e.preventDefault();
+        setShowDiagnostico(prev => !prev);
+      }
+    };
+    window.addEventListener('keydown', handleKeyPress);
+    return () => window.removeEventListener('keydown', handleKeyPress);
+  }, []);
 
   useEffect(() => {
     checkSession();
@@ -246,6 +270,51 @@ function App() {
       handleLogin();
     }
   }, [pin, twoOperators]);
+
+  // 🧪 Página de teste SSE (atalho: Ctrl+Shift+S)
+  if (showTestSSE) {
+    return (
+      <div>
+        <button
+          onClick={() => setShowTestSSE(false)}
+          className="fixed top-4 right-4 z-50 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg font-semibold"
+        >
+          ✖️ Fechar Teste SSE
+        </button>
+        <TestSSE />
+      </div>
+    );
+  }
+
+  // 🧪 Página de teste Contexto Inicial (atalho: Ctrl+Shift+C)
+  if (showTestContexto) {
+    return (
+      <div>
+        <button
+          onClick={() => setShowTestContexto(false)}
+          className="fixed top-4 right-4 z-50 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg font-semibold"
+        >
+          ✖️ Fechar Teste Contexto
+        </button>
+        <TestContextoInicial />
+      </div>
+    );
+  }
+
+  // 🧪 Página de diagnóstico (atalho: Ctrl+Shift+D)
+  if (showDiagnostico) {
+    return (
+      <div>
+        <button
+          onClick={() => setShowDiagnostico(false)}
+          className="fixed top-4 right-4 z-50 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg font-semibold"
+        >
+          ✖️ Fechar Diagnóstico
+        </button>
+        <DiagnosticoConexao />
+      </div>
+    );
+  }
 
   if (initialLoading) {
     return (

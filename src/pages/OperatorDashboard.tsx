@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { AlertCircle } from 'lucide-react';
 import { DashboardHeader } from '../components/DashboardHeader.tsx';
 import { EmptyProduction } from '../components/EmptyProduction.tsx';
 import { finishBatchProduction, type ProductionFinishType, addReject } from '../lib/production';
@@ -10,8 +11,7 @@ import { ErrorBoundary } from '../components/ErrorBoundary';
 import { ProductionCommandsPage } from './ProductionCommands';
 import { supabase } from '../lib/supabase';
 import { useRealtimeMachines } from '../hooks/useRealtimeMachines';
-import { useWebSocketSingleton } from '../hooks/useWebSocketSingleton';
-import { useWebSocketStorage } from '../lib/websocketStorage';
+import { useSSEManager } from '../hooks/useSSEManager';
 import type { Machine } from '../types/machine';
 import type { User } from '@supabase/supabase-js';
 import type { StopReason } from '../types/stops';
@@ -38,7 +38,8 @@ import type {
   ResumeEvent,
   StartSessionAckEvent,
   EndSessionAckEvent,
-  ErrorEvent
+  ErrorEvent,
+  MachineDataEvent
 } from '../types/websocket';
 
 interface OperatorDashboardProps {
@@ -572,130 +573,107 @@ export function OperatorDashboard({ machine, user, sessionId, onShowSettings, se
     setShowStopReasonModal(true);
   }, []);
 
-  // Hook do WebSocket Singleton - mantém uma única conexão persistente
+  // 🆕 Hook SSE - Sistema de comunicação em tempo real (funciona com firewall)
   const {
-    connected: wsConnected,
-    error: wsError,
-    machineData: wsMachineData,
-    startSession: wsStartSession,
-    endSession: wsEndSession,
-    consultarSessao: wsConsultarSessao,
-    getMachineData,
-    forcedStop: wsForcedStop,
-    forcedResume: wsForcedResume,
-    reject: wsReject,
-    atribuirMotivoParada: wsAtribuirMotivoParada
-  } = useWebSocketSingleton({
+    machineData: sseMachineData,
+    childMachinesData: sseChildMachinesData,
+    isConnected: sseConnected,
+    isLoading: sseLoading,
+    error: sseError,
+    adicionarRejeitos: sseAdicionarRejeitos,
+    forcarParada: sseForcarParada,
+    iniciarSessao: sseIniciarSessao,
+    finalizarSessao: sseFinalizarSessao
+  } = useSSEManager({
     machineId: machine.id_maquina,
-    onMachineData: handleMachineDataEvent,
-    onSignal: handleSignalEvent,
-    onReject: handleRejectEvent,
-    onVelocity: handleVelocityEvent,
-    onStop: handleStopEvent,
-    onResume: handleResumeEvent,
-    onStartSessionAck: handleStartSessionAck,
-    onEndSessionAck: handleEndSessionAck,
-    onForcedStop: handleForcedStopEvent,
-    onForcedResume: handleForcedResumeEvent,
-    onForcedStopAck: handleForcedStopAckEvent,
-    onForcedResumeAck: handleForcedResumeAckEvent,
-    onError: handleWSError,
-    autoConnect: true, // Conectar automaticamente
-    shouldReconnect: shouldReconnect // Controlar reconexão
+    enabled: true
   });
 
-  // Criar objeto wsState para compatibilidade
-  const wsState = {
-    connected: wsConnected,
-    error: wsError,
-    machineData: wsMachineData
-  };
-
-  // Quando conectar no WebSocket, solicitar dados iniciais para popular a view nova
+  // Log para debug
   React.useEffect(() => {
-    if (wsConnected) {
-      try {
-        // Consultar sessão e produção do mapa para preencher machineData
-        wsConsultarSessao?.();
-        consultarProducaoMapa?.();
-      } catch (err) {
-        console.warn('Falha ao consultar dados iniciais via WS:', err);
-      }
+    if (sseConnected && sseMachineData) {
+      console.log('✅ [SSE] Dados da máquina atualizados:', sseMachineData);
     }
-  }, [wsConnected]);
+  }, [sseConnected, sseMachineData]);
 
-  // Handler para retomada forçada
+  // Processar dados das máquinas filhas do SSE e atualizar childProductions
+  React.useEffect(() => {
+    if (sseChildMachinesData && sseChildMachinesData.size > 0) {
+      console.log('🔄 [SSE] Atualizando childProductions com dados do contexto inicial:', sseChildMachinesData.size, 'máquinas');
+      
+      setChildProductions(prevProductions => {
+        return prevProductions.map(prod => {
+          const sseData = sseChildMachinesData.get(prod.machine.id_maquina);
+          
+          if (sseData) {
+            console.log(`✅ [SSE] Atualizando produção da máquina ${prod.machine.nome} (ID: ${prod.machine.id_maquina}) com dados do contexto inicial:`, {
+              sinais_validos: sseData.sessao_operador.sinais_validos,
+              rejeitos: sseData.sessao_operador.rejeitos,
+              sinais: sseData.sessao_operador.sinais
+            });
+            
+            return {
+              ...prod,
+              stats: {
+                ...prod.stats,
+                produzido: sseData.sessao_operador.sinais_validos,
+                rejeitos: sseData.sessao_operador.rejeitos
+              },
+              websocket_data: {
+                sessao_operador: {
+                  sinais: sseData.sessao_operador.sinais,
+                  sinais_validos: sseData.sessao_operador.sinais_validos,
+                  rejeitos: sseData.sessao_operador.rejeitos,
+                  tempo_decorrido_segundos: sseData.sessao_operador.tempo_decorrido_segundos,
+                  tempo_paradas_segundos: sseData.sessao_operador.tempo_paradas_segundos,
+                  tempo_valido_segundos: sseData.sessao_operador.tempo_valido_segundos
+                },
+                last_signal_timestamp: Date.now(),
+                highlight_until: Date.now() + 3000 // Destacar por 3 segundos
+              }
+            };
+          }
+          
+          return prod;
+        });
+      });
+    }
+  }, [sseChildMachinesData]);
+
+  // Handler para retomada forçada (TODO: implementar via SSE/API)
   const handleForcedResume = useCallback(() => {
-    if (wsForcedResume) {
-      const success = wsForcedResume('admin');
-      if (success) {
-        console.log('🔄 Comando de retomada forçada enviado');
-      } else {
-        console.error('❌ Falha ao enviar comando de retomada forçada');
-      }
-    }
-  }, [wsForcedResume]);
+    console.log('🔄 Retomada forçada - TODO: implementar via API REST');
+    // TODO: Implementar usando apiService quando endpoint estiver disponível
+  }, []);
 
-  // Handler para parada forçada (chamado pelo modal)
+  // Handler para parada forçada (TODO: implementar via API)
   const handleForcedStop = useCallback(async (reasonId: number) => {
     try {
-      console.log('🛑 Enviando parada manual via WebSocket com motivo:', reasonId);
-      
-      if (wsForcedStop) {
-        const success = wsForcedStop(reasonId, 'operador', 'Parada manual');
-        if (success) {
-          console.log('✅ Comando de parada manual enviado com sucesso');
-          setShowStopReasonModal(false);
-        } else {
-          console.error('❌ Falha ao enviar comando de parada manual');
-          setErrorModalMessage('Falha ao enviar comando de parada. Verifique a conexão.');
-        }
-      }
+      console.log('🛑 Parada forçada - TODO: implementar via API REST');
+      // TODO: Implementar usando apiService.forcarParada quando disponível
+      setShowStopReasonModal(false);
     } catch (error) {
       console.error('❌ Erro ao enviar parada manual:', error);
       setErrorModalMessage('Falha ao registrar parada manual. Tente novamente.');
     }
-  }, [wsForcedStop]);
+  }, []);
 
-  // Estabilizar alternância entre WebSocket e Supabase Realtime
-  const lastRealtimeModeRef = React.useRef<{enabled: boolean; wsOnly: boolean} | null>(null);
-  React.useEffect(() => {
-    const desired = wsState.connected
-      ? { enabled: false, wsOnly: true }
-      : wsState.error || !shouldReconnect
-        ? { enabled: true, wsOnly: false }
-        : lastRealtimeModeRef.current ?? { enabled: true, wsOnly: false };
-
-    const last = lastRealtimeModeRef.current;
-    if (!last || last.enabled !== desired.enabled || last.wsOnly !== desired.wsOnly) {
-      lastRealtimeModeRef.current = desired;
-      setRealtimeEnabled(desired.enabled);
-      setUseWebSocketOnly(desired.wsOnly);
-      console.log('🔧 Atualizando modo de dados:', desired);
-    }
-  }, [wsState.connected, wsState.error, shouldReconnect, setRealtimeEnabled]);
-
-  // Botão para reativar WebSocket se foi desabilitado
-  const renderWebSocketStatus = () => {
-    if (!shouldReconnect && !wsState.connected) {
+  // SSE Status (substituiu WebSocket)
+  const renderSSEStatus = () => {
+    if (!sseConnected && !sseLoading) {
       return (
         <div className="fixed bottom-4 right-4 bg-red-500/10 border border-red-500/20 rounded-lg p-4 z-50">
           <div className="flex items-center justify-between gap-4">
             <div className="flex items-center gap-2">
               <AlertCircle className="w-5 h-5 text-red-400" />
               <p className="text-red-400 text-sm">
-                WebSocket desabilitado após muitas tentativas
+                SSE desconectado
               </p>
             </div>
             <button
               onClick={() => {
-                console.log('🔄 Reativando WebSocket manualmente');
-                setShouldReconnect(true);
-                setReconnectAttempts(0);
-                // Forçar reconexão
-                if (wsConnect) {
-                  wsConnect();
-                }
+                console.log('🔄 Tentando reconectar SSE...');
+                window.location.reload();
               }}
               className="px-3 py-1 bg-red-600 hover:bg-red-700 text-white text-xs rounded transition-colors"
             >
@@ -849,62 +827,22 @@ export function OperatorDashboard({ machine, user, sessionId, onShowSettings, se
           localStorage.setItem('industrack_session', activeSession.id.toString());
           console.log('currentSessionId atualizado para:', activeSession.id);
           
-          // 🔌 INTEGRAÇÃO WEBSOCKET: Primeiro consultar se já existe sessão ativa no WebSocket
+          // ✅ ENVIAR PARA API REST - Iniciar sessão no backend
           try {
-            console.log('🔌 Consultando sessão existente no WebSocket...');
+            console.log('📡 Enviando sessão existente para API backend...');
+            const apiResponse = await sseIniciarSessao({
+              id_operador: activeSession.operador,
+              id_turno: activeSession.turno || 3 // Usar turno da sessão ou padrão
+            });
             
-            // Consultar sessão existente no WebSocket
-            console.log('🔍 Verificando se já existe sessão ativa no WebSocket...');
-            const sessionExists = wsConsultarSessao();
-            
-            if (sessionExists) {
-              console.log('✅ Comando de consulta enviado, aguardando resposta...');
-              // Aguardar um momento para a resposta
-              await new Promise(resolve => setTimeout(resolve, 1000));
-              console.log('ℹ️ Assumindo que sessão não existe ou será verificada pelo servidor');
+            if (apiResponse.success) {
+              console.log('✅ Sessão existente enviada para API backend com sucesso');
+            } else {
+              console.warn('⚠️ Erro ao enviar sessão para API backend:', apiResponse.error);
             }
-            
-            // Nota: O servidor WebSocket vai verificar se já existe sessão ativa
-            // e retornar erro se tentar criar uma duplicada
-            
-            console.log('🔌 Criando nova sessão no WebSocket...');
-            if (sessionRecognizedRef.current) {
-              console.log('ℹ️ Sessão já reconhecida no WebSocket. Pulando envio de start_session.');
-              return;
-            }
-            
-            // Tentar enviar o comando imediatamente - o WebSocketManager agora lida com o estado CONNECTING
-            const success = wsStartSession(operatorData.id, activeSession.id);
-            
-            if (!success) {
-              console.warn('⚠️ WebSocket não pôde enviar comando imediatamente. Tentando novamente em 2s...');
-              
-              // Tentar novamente após 2 segundos
-              setTimeout(() => {
-                if (sessionRecognizedRef.current) return;
-                console.log('🔌 Enviando comando start_session para sessão existente (retry 1)...');
-                const retrySuccess = wsStartSession(operatorData.id, activeSession.id);
-                
-                if (!retrySuccess) {
-                  console.warn('⚠️ Segunda tentativa falhou. Tentando novamente em 3s...');
-                  
-                  // Tentar uma terceira vez após mais 3 segundos
-                  setTimeout(() => {
-                    if (sessionRecognizedRef.current) return;
-                    console.log('🔌 Enviando comando start_session para sessão existente (retry 2)...');
-                    const finalRetry = wsStartSession(operatorData.id, activeSession.id);
-                    
-                    if (!finalRetry) {
-                      console.error('❌ WebSocket não conseguiu enviar comando após múltiplas tentativas');
-                      setErrorModalMessage('Não foi possível conectar ao servidor WebSocket. Algumas funcionalidades podem estar indisponíveis.');
-                    }
-                  }, 3000);
-                }
-              }, 2000);
-            }
-          } catch (wsError) {
-            console.error('❌ Erro ao enviar comando start_session para sessão existente:', wsError);
-            // Não bloquear o fluxo se o WebSocket falhar
+          } catch (apiError) {
+            console.error('❌ Erro ao enviar sessão para API backend:', apiError);
+            // Não bloquear o fluxo se a API falhar
           }
         } else {
           console.log('Nenhuma sessão ativa encontrada no banco - criando nova sessão automaticamente');
@@ -997,47 +935,26 @@ export function OperatorDashboard({ machine, user, sessionId, onShowSettings, se
             setCurrentSessionId(newSession.id);
             localStorage.setItem('industrack_session', newSession.id.toString());
             
-            // 🔌 INTEGRAÇÃO WEBSOCKET: Primeiro consultar se já existe sessão ativa
+            // ✅ ENVIAR PARA API REST - Iniciar nova sessão no backend
             try {
-              console.log('🔌 Consultando sessão existente antes de criar nova...');
+              console.log('📡 Enviando nova sessão para API backend...');
+              const apiResponse = await sseIniciarSessao({
+                id_operador: operatorData.id,
+                id_turno: turnoId || 3 // Usar turno encontrado ou padrão
+              });
               
-              // Consultar sessão existente no WebSocket
-              console.log('🔍 Verificando se já existe sessão ativa no WebSocket...');
-              const sessionExists = wsConsultarSessao();
-              
-              if (sessionExists) {
-                console.log('✅ Comando de consulta enviado, aguardando resposta...');
-                // Aguardar um momento para a resposta
-                await new Promise(resolve => setTimeout(resolve, 1000));
-                console.log('ℹ️ Assumindo que sessão não existe ou será verificada pelo servidor');
-              }
-              
-              // Nota: O servidor WebSocket vai verificar se já existe sessão ativa
-              // e retornar erro se tentar criar uma duplicada
-              
-              console.log('🔌 Criando nova sessão no WebSocket...');
-
-              if (sessionRecognizedRef.current) {
-                console.log('ℹ️ Sessão já reconhecida no WebSocket. Pulando envio de start_session.');
-              } else if (wsState.connected) {
-                console.log('🔌 Enviando comando start_session para o WebSocket...');
-                wsStartSession(operatorData.id, newSession.id);
+              if (apiResponse.success) {
+                console.log('✅ Nova sessão enviada para API backend com sucesso');
+                setErrorModalMessage('✅ Sessão iniciada com sucesso!');
+                setTimeout(() => setErrorModalMessage(null), 2000);
               } else {
-                console.warn('⚠️ WebSocket não conectado ao criar sessão. Tentando novamente em 2s...');
-                // Tentar novamente após 2 segundos
-                setTimeout(() => {
-                  if (sessionRecognizedRef.current) return;
-                  if (wsState.connected) {
-                    console.log('🔌 Enviando comando start_session para o WebSocket (retry)...');
-                    wsStartSession(operatorData.id, newSession.id);
-                  } else {
-                    console.error('❌ WebSocket ainda não conectado após retry');
-                  }
-                }, 2000);
+                console.warn('⚠️ Erro ao enviar sessão para API backend:', apiResponse.error);
+                setErrorModalMessage('⚠️ Sessão criada no banco, mas erro ao enviar para backend');
+                setTimeout(() => setErrorModalMessage(null), 3000);
               }
-            } catch (wsError) {
-              console.error('❌ Erro ao enviar comando start_session:', wsError);
-              // Não bloquear o fluxo se o WebSocket falhar
+            } catch (apiError) {
+              console.error('❌ Erro ao enviar sessão para API backend:', apiError);
+              // Não bloquear o fluxo se a API falhar
             }
           } catch (createError) {
             console.error('Erro ao criar sessão automaticamente no OperatorDashboard:', createError);
@@ -1057,6 +974,11 @@ export function OperatorDashboard({ machine, user, sessionId, onShowSettings, se
 
   // Estado para controlar se estamos usando apenas WebSocket
   const [useWebSocketOnly, setUseWebSocketOnly] = useState(false);
+  
+  // Estados adicionais necessários
+  const [isFinishingProduction, setIsFinishingProduction] = useState(false);
+  const [showSetup, setShowSetup] = useState(false);
+  const [singleProduction, setSingleProduction] = useState<any>(null);
   
   // Usar o novo hook para dados das máquinas filhas
   const { 
@@ -1658,24 +1580,31 @@ export function OperatorDashboard({ machine, user, sessionId, onShowSettings, se
       try {
         console.log('Encerrando sessão via OperatorDashboard, sessionId:', currentSessionId);
         
-        // 🔌 INTEGRAÇÃO WEBSOCKET: Enviar comando end_session ANTES de encerrar no Supabase
+        // ✅ ENVIAR PARA API REST: Finalizar sessão no backend ANTES de encerrar no Supabase
         try {
-          if (wsState.connected) {
-            console.log('🔌 Enviando comando end_session para o WebSocket...');
-            wsEndSession();
-            // Aguardar um momento para o servidor processar
+          if (sseConnected) {
+            console.log('📡 Enviando comando finalizar sessão via API REST...');
+            const apiResponse = await sseFinalizarSessao();
+            
+            if (apiResponse.success) {
+              console.log('✅ Sessão finalizada no backend com sucesso');
+            } else {
+              console.warn('⚠️ Erro ao finalizar sessão no backend:', apiResponse.error);
+            }
+            
+            // Aguardar um pouco para garantir que o backend processou
             await new Promise(resolve => setTimeout(resolve, 500));
           } else {
-            console.warn('⚠️ WebSocket não conectado ao encerrar sessão');
+            console.warn('⚠️ SSE não conectado ao encerrar sessão');
           }
-        } catch (wsError) {
-          console.error('❌ Erro ao enviar comando end_session:', wsError);
-          // Não bloquear o fluxo se o WebSocket falhar
+        } catch (sseError) {
+          console.error('❌ Erro ao enviar comando finalizar sessão:', sseError);
+          // Não bloquear o fluxo se a API falhar
         }
         
         // Encerrar sessão no Supabase
         await endSession(currentSessionId);
-        console.log('Sessão encerrada com sucesso');
+        console.log('Sessão encerrada com sucesso no Supabase');
       } catch (err) {
         console.error('Error ending session:', err);
       }
@@ -1731,30 +1660,53 @@ export function OperatorDashboard({ machine, user, sessionId, onShowSettings, se
     }
   };
 
+  // Adicionar rejeitos para máquinas filhas (multipostos)
   const handleAddReject = async (machineId: number) => {
     try {
-      console.log('🗑️ Enviando rejeito via WebSocket para máquina:', machineId);
+      console.log('🗑️ Adicionando rejeito para máquina filha:', machineId);
       
-      // Enviar comando de rejeito via WebSocket com o ID específico da máquina
-      const success = wsReject(machineId);
+      const response = await sseAdicionarRejeitos({
+        id_maquina: machineId,
+        quantidade: 1,
+        id_motivo_rejeito: 1 // TODO: Permitir selecionar motivo
+      });
       
-      if (success) {
-        console.log('✅ Comando de rejeito enviado com sucesso via WebSocket para máquina:', machineId);
-        // O backend irá processar o rejeito e enviar um evento de volta
-        // que será tratado pelo handleRejectEvent
+      if (response.success) {
+        console.log('✅ Rejeito adicionado com sucesso');
+        setErrorModalMessage('✅ Rejeito adicionado com sucesso!');
+        setTimeout(() => setErrorModalMessage(null), 2000);
       } else {
-        console.error('❌ Falha ao enviar comando de rejeito via WebSocket');
-        setErrorModalMessage('Falha ao enviar comando de rejeito. Verifique a conexão.');
+        throw new Error(response.error || 'Erro ao adicionar rejeito');
       }
     } catch (error) {
       console.error('❌ Erro ao enviar rejeito:', error);
-      setErrorModalMessage('Falha ao registrar rejeito. Tente novamente.');
+      setErrorModalMessage('❌ Falha ao registrar rejeito. Tente novamente.');
+      setTimeout(() => setErrorModalMessage(null), 3000);
     }
   };
 
-  // Função wrapper para rejeitos de máquinas simples (sem grade específica)
+  // Adicionar rejeitos para máquinas simples
   const handleAddRejeito = async () => {
-    return handleAddReject(machine.id_maquina);
+    try {
+      console.log('🗑️ Adicionando rejeito para máquina simples:', machine.id_maquina);
+      
+      const response = await sseAdicionarRejeitos({
+        quantidade: 1,
+        id_motivo_rejeito: 1 // TODO: Permitir selecionar motivo
+      });
+      
+      if (response.success) {
+        console.log('✅ Rejeito adicionado com sucesso');
+        setErrorModalMessage('✅ Rejeito adicionado com sucesso!');
+        setTimeout(() => setErrorModalMessage(null), 2000);
+      } else {
+        throw new Error(response.error || 'Erro ao adicionar rejeito');
+      }
+    } catch (error) {
+      console.error('❌ Erro ao enviar rejeito:', error);
+      setErrorModalMessage('❌ Falha ao registrar rejeito. Tente novamente.');
+      setTimeout(() => setErrorModalMessage(null), 3000);
+    }
   };
 
   // Ordenar as produções por número da estação (numero_estacao)
@@ -2168,16 +2120,20 @@ export function OperatorDashboard({ machine, user, sessionId, onShowSettings, se
         // Continuar sem o turno se houver erro
       }
 
-      // ✅ NOVO: Enviar justificação via WebSocket em vez de Supabase
-      console.log('🔧 Enviando justificação via WebSocket:', {
+      // TODO: MIGRAR PARA API REST - justificar parada via apiService
+      console.log('🔧 TODO: Enviar justificação via API REST:', {
         id_parada: finalStopId,
         id_motivo: finalReasonId
       });
       
-      const success = wsAtribuirMotivoParada(finalStopId, finalReasonId);
+      // Atualizar diretamente no banco de dados (temporário até migração para API)
+      const { error: updateError } = await supabase
+        .from('paradas_redis')
+        .update({ motivo_parada: finalReasonId })
+        .eq('id', finalStopId);
       
-      if (!success) {
-        throw new Error('Falha ao enviar comando de justificação via WebSocket');
+      if (updateError) {
+        throw new Error('Falha ao justificar parada no banco de dados');
       }
       
       // Parada justificada com sucesso
@@ -2242,8 +2198,8 @@ export function OperatorDashboard({ machine, user, sessionId, onShowSettings, se
         isMachineStopped={isMachineStopped}
         onForcedResume={handleForcedResume}
         currentStopJustified={currentStopJustified}
-        wsData={wsMachineData}
-        onWsEndSession={wsEndSession}
+        wsData={sseMachineData}
+        onWsEndSession={() => console.log('TODO: Implementar finalizar sessão via API')}
       />
 
       <DashboardHeader
@@ -2394,11 +2350,10 @@ export function OperatorDashboard({ machine, user, sessionId, onShowSettings, se
                   )
                 )
               ) : (
-                // Interface para máquinas de estação única
-                // Preferir sempre a versão nova quando o WebSocket estiver conectado
-                wsConnected ? (
+                // Interface para máquinas de estação única - SSE
+                sseConnected ? (
                   <SingleMachineViewNew 
-                    machineData={wsMachineData}
+                    machineData={sseMachineData}
                     onAddReject={handleAddReject}
                     onAddRejeito={handleAddRejeito}
                     statusParada={statusParada}
@@ -2464,8 +2419,8 @@ export function OperatorDashboard({ machine, user, sessionId, onShowSettings, se
         </div>
       )}
 
-      {/* Status do WebSocket */}
-      {renderWebSocketStatus()}
+      {/* Status do SSE */}
+      {renderSSEStatus()}
 
       {/* ✅ NOVO: Debug do Armazenamento WebSocket */}
       <ErrorBoundary

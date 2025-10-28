@@ -313,3 +313,6 @@ O frontend agora:
 - Mas não recebe eventos ❌
 
 
+
+
+
