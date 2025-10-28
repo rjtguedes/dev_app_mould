@@ -27,6 +27,22 @@ export function useSSEManager(options: SSEManagerOptions) {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // ✅ DEBUG: Log quando machineData é atualizado
+  useEffect(() => {
+    if (machineData) {
+      console.log('🔄 SSE Manager: machineData atualizado para a UI:', {
+        tipo: 'dados_mapeados',
+        id: machineData.contexto?.id,
+        nome: machineData.contexto?.nome,
+        status: machineData.contexto?.status,
+        sinais_sessao: machineData.contexto?.sessao_operador?.sinais,
+        sinais_validos: machineData.contexto?.sessao_operador?.sinais_validos,
+        rejeitos_sessao: machineData.contexto?.sessao_operador?.rejeitos,
+        parada_ativa: machineData.contexto?.parada_ativa
+      });
+    }
+  }, [machineData]);
+
   // Handler para mensagens SSE
   const handleSSEMessage = useCallback((data: any) => {
     console.log('📊 SSE Manager: Processando mensagem:', data);
@@ -37,12 +53,150 @@ export function useSSEManager(options: SSEManagerOptions) {
       const machineDataPayload = data.dados_maquina || data.machine_data || data.data || data;
       console.log('✅ SSE Manager: Dados da máquina extraídos:', machineDataPayload);
       setMachineData(machineDataPayload);
-    } else if (data.type === 'connected') {
+    } 
+    // ✅ NOVO: Processar eventos de sinal e rejeitos
+    else if (data.type === 'sinal') {
+      console.log('📊 SSE Manager: Processando evento de sinal:', data);
+      
+      // Mapear dados SSE para formato esperado pelo componente
+      const sseData = data.data;
+      const mappedData = {
+        contexto: {
+          id: data.target_machine_id,
+          nome: `Máquina ${data.target_machine_id}`, // Temporário
+          velocidade: 0,
+          status: true, // Assumir que está produzindo se enviou sinal
+          sessao_operador: {
+            id_operador: sseData.sessao?.id_operador || null,
+            nome_operador: sseData.sessao?.nome_operador || 'N/A',
+            sinais: sseData.sessao?.sinais || 0,
+            sinais_validos: sseData.sessao?.sinais_validos || 0,
+            rejeitos: sseData.sessao?.rejeitos || 0,
+            tempo_decorrido_segundos: sseData.sessao?.tempo_decorrido_segundos || 0,
+            tempo_paradas_segundos: sseData.sessao?.tempo_paradas_segundos || 0,
+            tempo_valido_segundos: sseData.sessao?.tempo_valido_segundos || 0
+          },
+          producao_mapa: {
+            sinais: sseData.mapa?.sinais || 0,
+            rejeitos: sseData.mapa?.rejeitos || 0,
+            saldo_a_produzir: sseData.mapa?.saldo_a_produzir || 0,
+            qt_produzir: (sseData.mapa?.sinais || 0) + (sseData.mapa?.saldo_a_produzir || 0)
+          },
+          producao_turno: {
+            sinais: sseData.turno?.sinais || 0,
+            sinais_validos: sseData.turno?.sinais_validos || 0,
+            rejeitos: sseData.turno?.rejeitos || 0
+          },
+          parada_ativa: null // Se enviou sinal, não está parada
+        }
+      };
+      
+      console.log('✅ SSE Manager: Dados mapeados:', mappedData);
+      setMachineData(mappedData);
+    }
+    else if (data.type === 'rejeitos_adicionados') {
+      console.log('📊 SSE Manager: Processando evento de rejeitos:', data);
+      
+      // Atualizar apenas os contadores de rejeitos
+      setMachineData(prev => {
+        if (!prev || !prev.contexto) return prev;
+        
+        return {
+          ...prev,
+          contexto: {
+            ...prev.contexto,
+            sessao_operador: {
+              ...prev.contexto.sessao_operador,
+              rejeitos: data.data.total_rejeitos_sessao || prev.contexto.sessao_operador.rejeitos
+            },
+            producao_mapa: {
+              ...prev.contexto.producao_mapa,
+              rejeitos: data.data.total_rejeitos_mapa || prev.contexto.producao_mapa?.rejeitos || 0
+            },
+            producao_turno: {
+              ...prev.contexto.producao_turno,
+              rejeitos: data.data.total_rejeitos_turno || prev.contexto.producao_turno?.rejeitos || 0
+            }
+          }
+        };
+      });
+    }
+    // ✅ NOVO: Processar eventos de parada
+    else if (data.type === 'parada' || data.type === 'stop') {
+      console.log('🛑 SSE Manager: Processando evento de parada:', data);
+      
+      setMachineData(prev => {
+        // Se não há dados anteriores, criar estrutura básica
+        if (!prev || !prev.contexto) {
+          return {
+            contexto: {
+              id: data.target_machine_id,
+              nome: `Máquina ${data.target_machine_id}`,
+              velocidade: 0,
+              status: false, // Máquina PARADA
+              parada_ativa: {
+                id: data.data?.parada_id || Date.now(),
+                inicio: data.timestamp || Math.floor(Date.now() / 1000),
+                motivo_id: data.data?.motivo_id || null
+              },
+              sessao_operador: prev?.contexto?.sessao_operador || {
+                sinais: 0,
+                sinais_validos: 0,
+                rejeitos: 0,
+                tempo_decorrido_segundos: 0,
+                tempo_paradas_segundos: 0,
+                tempo_valido_segundos: 0
+              },
+              producao_mapa: prev?.contexto?.producao_mapa || null,
+              producao_turno: prev?.contexto?.producao_turno || null
+            }
+          };
+        }
+        
+        return {
+          ...prev,
+          contexto: {
+            ...prev.contexto,
+            status: false, // Máquina PARADA
+            velocidade: 0, // Velocidade zero quando parada
+            parada_ativa: {
+              id: data.data?.parada_id || Date.now(),
+              inicio: data.timestamp || Math.floor(Date.now() / 1000),
+              motivo_id: data.data?.motivo_id || null
+            }
+          }
+        };
+      });
+      
+      console.log('🛑 Máquina parada - status: false, parada_ativa definida');
+    }
+    // ✅ NOVO: Processar eventos de retomada
+    else if (data.type === 'retomada' || data.type === 'resume') {
+      console.log('▶️ SSE Manager: Processando evento de retomada:', data);
+      
+      setMachineData(prev => {
+        if (!prev || !prev.contexto) return prev;
+        
+        return {
+          ...prev,
+          contexto: {
+            ...prev.contexto,
+            status: true, // Máquina em funcionamento
+            parada_ativa: null // Não há parada ativa
+          }
+        };
+      });
+    }
+    else if (data.type === 'connected') {
       // Mensagem de conexão, não precisa atualizar dados
       console.log('🔗 SSE Manager: Mensagem de conexão recebida');
-    } else if (data.data) {
+    } 
+    // ✅ Fallback para outros tipos de dados
+    else if (data.data) {
+      console.log('📊 SSE Manager: Processando dados via fallback data:', data.type);
       setMachineData(data.data);
     } else {
+      console.log('📊 SSE Manager: Processando dados via fallback direto:', data.type);
       setMachineData(data);
     }
   }, []);

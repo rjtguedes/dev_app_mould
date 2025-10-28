@@ -38,6 +38,7 @@ interface OperatorDashboardProps {
   sessionId: number | null;
   onShowSettings: () => void;
   secondaryOperator?: { id: number; nome: string } | null;
+  operator?: { id_operador: number; nome: string } | null; // ✅ NOVO: Dados do operador da API REST
 }
 
 interface ChildMachine {
@@ -46,7 +47,7 @@ interface ChildMachine {
   ativa: boolean;
 }
 
-export function OperatorDashboard({ machine, user, sessionId, onShowSettings, secondaryOperator }: OperatorDashboardProps) {
+export function OperatorDashboard({ machine, user, sessionId, onShowSettings, secondaryOperator, operator }: OperatorDashboardProps) {
   const { 
     machine: realtimeMachine, 
     setIsUpdating, 
@@ -391,21 +392,32 @@ export function OperatorDashboard({ machine, user, sessionId, onShowSettings, se
         console.log('Machine ID:', machine.id_maquina);
         console.log('Secondary Operator:', secondaryOperator);
 
-        // Buscar operador principal
-        const { data: operatorData, error: operatorError } = await supabase
-          .from('operadores')
-          .select('id, nome, id_empresa')
-          .eq('id_usuario', user.id)
-          .single();
+        // ✅ NOVO: Usar dados do operador da API REST
+        let operatorData: { id: number; nome: string; id_empresa?: number } | null = null;
+        
+        if (operator) {
+          console.log('✅ Usando operador da API REST:', operator);
+          operatorData = { id: operator.id_operador, nome: operator.nome };
+        } else {
+          // ⚠️ Fallback para modo admin (Supabase)
+          console.log('⚠️ Fallback: Buscando operador no Supabase');
+          const { data: supabaseOperator, error: operatorError } = await supabase
+            .from('operadores')
+            .select('id, nome, id_empresa')
+            .eq('id_usuario', user.id)
+            .single();
 
-        if (operatorError) {
-          console.error('Erro ao buscar operador:', operatorError);
-          return;
-        }
+          if (operatorError) {
+            console.error('Erro ao buscar operador:', operatorError);
+            return;
+          }
 
-        if (!operatorData) {
-          console.error('Operador não encontrado para o usuário:', user.id);
-          return;
+          if (!supabaseOperator) {
+            console.error('Operador não encontrado para o usuário:', user.id);
+            return;
+          }
+          
+          operatorData = supabaseOperator;
         }
 
         console.log('Operator Data:', operatorData);

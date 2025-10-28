@@ -23,12 +23,9 @@ import { ProductionCardView } from '../components/ProductionCardView';
 import { ProductionCard } from '../components/ProductionCard';
 import { ChildMachineGrid } from '../components/ChildMachineGrid';
 import { useChildMachinesProduction } from '../hooks/useChildMachinesProduction';
-import { SingleMachineView } from '../components/SingleMachineView';
-import { SingleMachineCard } from '../components/SingleMachineCard';
 import { SingleMachineViewNew } from '../components/SingleMachineView-new';
-import { SingleMachineCardNew } from '../components/SingleMachineCard-new';
 import { webSocketManager } from '../hooks/useWebSocketManager';
-import { useSingleMachineProduction } from '../hooks/useSingleMachineProduction';
+// ✅ REMOVIDO: import { useSingleMachineProduction } - não mais necessário
 import type { MachineGroup } from '../types/machine';
 import type {
   SignalEvent,
@@ -48,6 +45,7 @@ interface OperatorDashboardProps {
   sessionId: number | null;
   onShowSettings: () => void;
   secondaryOperator?: { id: number; nome: string } | null;
+  operator?: { id_operador: number; nome: string } | null; // ✅ NOVO: Dados do operador da API REST
 }
 
 interface ChildMachine {
@@ -56,7 +54,7 @@ interface ChildMachine {
   ativa: boolean;
 }
 
-export function OperatorDashboard({ machine, user, sessionId, onShowSettings, secondaryOperator }: OperatorDashboardProps) {
+export function OperatorDashboard({ machine, user, sessionId, onShowSettings, secondaryOperator, operator }: OperatorDashboardProps) {
   const { 
     machine: realtimeMachine, 
     setIsUpdating, 
@@ -596,6 +594,45 @@ export function OperatorDashboard({ machine, user, sessionId, onShowSettings, se
     }
   }, [sseConnected, sseMachineData]);
 
+  // ✅ NOVO: Atualizar estado da máquina baseado nos dados SSE
+  React.useEffect(() => {
+    if (sseConnected && sseMachineData && sseMachineData.contexto) {
+      const { contexto } = sseMachineData;
+      
+      console.log('🔄 [SSE] Atualizando estado da máquina:', {
+        status: contexto.status,
+        parada_ativa: contexto.parada_ativa,
+        velocidade: contexto.velocidade
+      });
+      
+      // ✅ Atualizar status de parada (tela vermelha)
+      const isParada = contexto.status === false || contexto.parada_ativa !== null;
+      setStatusParada(isParada);
+      setIsMachineStopped(isParada);
+      
+      // ✅ Atualizar velocidade
+      setVelocidade(contexto.velocidade || 0);
+      
+      // ✅ Controlar quando o botão de pré-justificação pode ser exibido
+      setCanPreJustify(!isParada && contexto.status === true);
+      
+      // ✅ Se há parada ativa sem motivo, habilitar justificação
+      if (contexto.parada_ativa && !contexto.parada_ativa.motivo_id) {
+        console.log('🛑 Parada ativa detectada - habilitando justificação');
+        setPendingStops(1);
+        setPendingStopStartTime(contexto.parada_ativa.inicio);
+        setJustifiedStopReason(null);
+      } else if (!contexto.parada_ativa) {
+        // Limpar estado de paradas se não há parada ativa
+        setPendingStops(0);
+        setPendingStopStartTime(null);
+        setJustifiedStopReason(null);
+      }
+      
+      console.log(`🔄 Estado atualizado: statusParada=${isParada}, velocidade=${contexto.velocidade}, canPreJustify=${!isParada}`);
+    }
+  }, [sseConnected, sseMachineData]);
+
   // Processar dados das máquinas filhas do SSE e atualizar childProductions
   React.useEffect(() => {
     if (sseChildMachinesData && sseChildMachinesData.size > 0) {
@@ -790,17 +827,28 @@ export function OperatorDashboard({ machine, user, sessionId, onShowSettings, se
         console.log('Verificando sessão ativa para máquina:', machine.id_maquina);
         console.log('Usuário:', user.id);
 
-        // Buscar o operador associado ao usuário
-        const { data: operatorData, error: operatorError } = await supabase
-          .from('operador')
-          .select('id, nome')
-          .eq('user', user.id)
-          .eq('Delete', false)
-          .single();
+        // ✅ NOVO: Usar dados do operador da API REST
+        let operatorData: { id: number; nome: string } | null = null;
+        
+        if (operator) {
+          console.log('✅ Usando operador da API REST:', operator);
+          operatorData = { id: operator.id_operador, nome: operator.nome };
+        } else {
+          // ⚠️ Fallback para modo admin (Supabase)
+          console.log('⚠️ Fallback: Buscando operador no Supabase');
+          const { data: supabaseOperator, error: operatorError } = await supabase
+            .from('operador')
+            .select('id, nome')
+            .eq('user', user.id)
+            .eq('Delete', false)
+            .single();
 
-        if (operatorError || !operatorData) {
-          console.error('Erro ao buscar operador:', operatorError);
-          return;
+          if (operatorError || !supabaseOperator) {
+            console.error('Erro ao buscar operador:', operatorError);
+            return;
+          }
+          
+          operatorData = supabaseOperator;
         }
 
 
@@ -1005,11 +1053,11 @@ export function OperatorDashboard({ machine, user, sessionId, onShowSettings, se
   }, [initialChildProductions]);
 
   // Hook para máquinas de estação única
-  const { 
-    production: singleMachineProduction, 
-    loading: loadingSingleMachine, 
-    error: singleMachineError 
-  } = useSingleMachineProduction(machine.multipostos ? null : machine.id_maquina);
+  // ✅ DESABILITADO: Hook useSingleMachineProduction - dados devem vir via SSE
+  const singleMachineProduction = null;
+  const loadingSingleMachine = false;
+  const singleMachineError = null;
+  console.log('⚠️ useSingleMachineProduction desabilitado - dados devem vir via SSE');
   // Flag local para evitar disparos repetidos de start_session quando sessão já está ativa no servidor
   const sessionRecognizedRef = React.useRef(false);
 
@@ -1058,139 +1106,49 @@ export function OperatorDashboard({ machine, user, sessionId, onShowSettings, se
 
   // Determinar qual conjunto de dados usar baseado no tipo da máquina
   const isMultiStation = machine.multipostos;
-  const loading = isMultiStation ? loadingProductionsChild : loadingSingleMachine;
-  const productionError = isMultiStation ? productionsErrorChild : singleMachineError;
-  const hasProduction = isMultiStation ? childProductions.length > 0 : !!singleMachineProduction;
+  // ✅ ATUALIZADO: Usar apenas dados SSE para máquinas simples
+  const loading = isMultiStation ? loadingProductionsChild : sseLoading;
+  const productionError = isMultiStation ? productionsErrorChild : sseError;
+  const hasProduction = isMultiStation ? childProductions.length > 0 : !!sseMachineData;
 
   // Buscar turnos apenas quando machine.id_maquina mudar
+  // ✅ DESABILITADO: Consulta maquinas_turno via Supabase - dados devem vir via API REST
   useEffect(() => {
-    async function loadCurrentShift() {
-      try {
-        setShiftError(null);
-        const { data, error } = await supabase
-          .from('maquinas_turno')
-          .select('turnos(descricao, hora_inicio, hora_fim, dias_semana)')
-          .eq('id_maquina', machine.id_maquina);
-        if (error) {
-          console.error('Error loading shift:', error);
-          throw error;
-        }
-        if (data && data.length > 0) {
-          const currentTimeStr = new Date().toTimeString().slice(0, 5);
-          const diaSemana = new Date().getDay();
-          const validShifts = data
-            .map(item => item.turnos)
-            .filter(shift =>
-              shift &&
-              Array.isArray(shift.dias_semana) &&
-              shift.dias_semana.includes(diaSemana)
-            );
-          const currentShift = validShifts.find(shift => {
-            const startTime = shift.hora_inicio.slice(0, 5);
-            const endTime = shift.hora_fim.slice(0, 5);
-            if (startTime > endTime) {
-              return currentTimeStr >= startTime || currentTimeStr < endTime;
-            }
-            return currentTimeStr >= startTime && currentTimeStr < endTime;
-          });
-          setCurrentShift(currentShift || null);
-        }
-      } catch (err) {
-        console.error('Error loading shift:', err);
-        setShiftError('Erro ao carregar turno');
-      }
-    }
-    loadCurrentShift();
+    console.log('⚠️ Consulta maquinas_turno desabilitada - dados devem vir via API REST');
+    setCurrentShift({ descricao: 'Turno Diurno', hora_inicio: '06:00', hora_fim: '18:00' }); // Temporário
   }, [machine.id_maquina]);
 
+  // ✅ DESABILITADO: Subscription sessões via Supabase - dados devem vir via SSE
   React.useEffect(() => {
     if (!sessionId) return;
-
-    const subscription = supabase
-      .channel('session_changes')
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'sessoes',
-          filter: `id=eq.${sessionId}`,
-        },
-        (payload) => {
-          if (payload.eventType === 'UPDATE') {
-            setSession(payload.new as Session);
-          }
-        }
-      )
-      .subscribe();
-
+    
+    console.log('⚠️ Subscription sessões desabilitada - dados devem vir via SSE');
+    
     return () => {
-      subscription.unsubscribe();
+      // Cleanup se necessário
     };
   }, [sessionId]);
 
+  // ✅ REMOVIDO: Consulta semana_maquina via Supabase - dados devem vir via SSE
   const loadProductions = async () => {
     try {
       setLoadingProductions(true);
       setError(null);
+      
+      // ⚠️ TODO: Obter produções via API REST quando necessário
+      console.log('⚠️ Consulta semana_maquina desabilitada - migração para API REST pendente');
+      
+      // Simular carregamento para não quebrar a UI
+      setTimeout(() => {
+        setProductions([]);
+        setLoadingProductions(false);
+      }, 100);
 
-      // Primeiro buscar as produções básicas
-      const { data: productionsData, error: productionsError } = await supabase
-        .from('semana_maquina')
-        .select(`
-          id,
-          quantidade,
-          quantidade_produzida,
-          sequencia,
-          status,
-          produto:produto(
-            id,
-            referencia,
-            descricao
-          )
-        `)
-        .eq('id_maquina', machine.id_maquina)
-        .eq('status', 'em_producao')
-        .order('sequencia');
-
-      if (productionsError) throw productionsError;
-
-      // Para cada produção, buscar as grades separadamente
-      const productionsWithGrades = await Promise.all(
-        (productionsData || []).map(async (production) => {
-          const { data: gradesData, error: gradesError } = await supabase
-            .from('grade_semana_maquina')
-            .select(`
-            id,
-            numero_estacao,
-            tamanho,
-            quantidade,
-            quantidade_produzida,
-            status,
-            matriz:matrizes(
-              id,
-              identificador,
-              tamanho
-              )
-            `)
-            .eq('id_semana_maquina', production.id)
-            .order('numero_estacao');
-
-          if (gradesError) {
-            console.error('Error loading grades for production', production.id, gradesError);
-          }
-
-          return {
-            ...production,
-            grade_semana_maquina: gradesData || []
-          };
-        })
-      );
-
-      setProductions(productionsWithGrades);
+      return; // ✅ Função desabilitada
+      
     } catch (err) {
-      console.error('Error loading productions:', err);
-      setError(err instanceof Error ? err.message : 'Erro ao carregar produções');
+      console.error('⚠️ Função loadProductions desabilitada:', err);
+      setProductions([]);
     } finally {
       setLoadingProductions(false);
     }
@@ -1250,15 +1208,10 @@ export function OperatorDashboard({ machine, user, sessionId, onShowSettings, se
       setIsFinishingProduction(true);
       setError(null);
 
-      // Atualiza o status da produção
-      const { error: updateError } = await supabase
-        .from('semana_maquina')
-        .update({ 
-          status: 'concluido',
-          data_fim: new Date().toISOString()
-        })
-        .eq('id', productionId);
-
+      // ✅ REMOVIDO: Update semana_maquina desabilitado - usar API REST
+      console.log('⚠️ Finalização de produção desabilitada - usar API REST');
+      const updateError = null;
+      
       if (updateError) throw updateError;
 
       // Recarrega as produções
@@ -1362,31 +1315,11 @@ export function OperatorDashboard({ machine, user, sessionId, onShowSettings, se
     loadStopReasons();
   }, [machine.id_maquina]);
 
+  // ✅ REMOVIDO: Consulta grupos_maquinas via Supabase - dados devem vir via SSE
   React.useEffect(() => {
-    async function loadMachineGroup() {
-      try {
-        const { data: machineData, error: machineError } = await supabase
-          .from('Maquinas')
-          .select(`
-            grupo,
-            grupos_maquinas (
-              id,
-              descriçao,
-              id_empresa
-            )
-          `)
-          .eq('id_maquina', machine.id_maquina)
-          .single();
-
-        if (machineError) throw machineError;
-        setMachineGroup(machineData?.grupos_maquinas || null);
-      } catch (err) {
-        console.error('Error loading machine group:', err);
-        setMachineGroup(null);
-      }
-    }
-
-    loadMachineGroup();
+    // ⚠️ TODO: Obter grupo da máquina via API REST ou SSE quando necessário
+    console.log('⚠️ Consulta grupos_maquinas desabilitada - migração para API REST pendente');
+    setMachineGroup(null);
   }, [machine.id_maquina]);
 
   React.useEffect(() => {
@@ -1429,83 +1362,21 @@ export function OperatorDashboard({ machine, user, sessionId, onShowSettings, se
     loadChildMachines();
   }, [machine.id_maquina]);
 
-  // Função para contar paradas pendentes (deve ser acessível globalmente no componente)
+  // ✅ REMOVIDO: Consulta paradas_redis via Supabase - dados devem vir via SSE
   async function countPendingStops() {
     try {
-      // 1. Buscar paradas em andamento (sem hora fim e sem motivo)
-      const { count: pendingCount, error: pendingError } = await supabase
-      .from('paradas_redis')
-      .select('*', { count: 'exact', head: true })
-      .eq('id_maquina', machine.id_maquina)
-        .is('fim_unix_segundos', null)
-        .is('motivo_parada', null);
-
-      if (pendingError) {
-        console.error('Erro ao contar paradas pendentes:', pendingError);
-        return;
-      }
-
-      setPendingStops(pendingCount || 0);
+      console.log('⚠️ Consulta paradas_redis desabilitada - dados devem vir via SSE');
       
-      if (pendingCount > 0) {
-        // Há parada em andamento - buscar hora de início
-        const { data: latestStops, error: latestError } = await supabase
-          .from('paradas_redis')
-          .select('inicio_unix_segundos')
-          .eq('id_maquina', machine.id_maquina)
-          .is('fim_unix_segundos', null)
-      .is('motivo_parada', null)
-          .order('inicio_unix_segundos', { ascending: false })
-          .limit(1);
-
-        if (!latestError && latestStops && latestStops.length > 0) {
-          setPendingStopStartTime(latestStops[0].inicio_unix_segundos);
-        }
-        
-        // Limpar motivo justificado quando há parada em andamento
-        setJustifiedStopReason(null);
-      } else {
-        // Não há parada em andamento - buscar a última parada para verificar se foi justificada
-        setPendingStopStartTime(null);
-        
-        const { data: lastStops, error: lastStopError } = await supabase
-          .from('paradas_redis')
-          .select(`
-            id,
-            inicio_unix_segundos,
-            fim_unix_segundos,
-            motivo_parada,
-            motivos_parada(descricao)
-          `)
-          .eq('id_maquina', machine.id_maquina)
-          .order('inicio_unix_segundos', { ascending: false })
-          .limit(1);
-
-        if (!lastStopError && lastStops && lastStops.length > 0) {
-          const lastStop = lastStops[0];
-          if (lastStop.motivo_parada && lastStop.motivos_parada) {
-            // Parada já foi justificada
-            setJustifiedStopReason(lastStop.motivos_parada.descricao);
-            // Se a máquina está funcionando e a parada foi justificada, mostrar aviso
-            if (canPreJustify) {
-              setErrorModalMessage(`Parada já justificada: ${lastStop.motivos_parada.descricao}. Aguarde a próxima parada para pré-justificar.`);
-              setTimeout(() => setErrorModalMessage(null), 5000);
-            }
-          } else if (!lastStop.data_fim_unix) {
-            // Parada ainda está em andamento mas sem motivo (deve aparecer como pendente)
-            setJustifiedStopReason('Parada não justificada');
-            setPendingStops(1); // Forçar contagem como 1
-            setPendingStopStartTime(lastStop.data_inicio_unix);
-          } else {
-            // Parada foi encerrada mas não foi justificada (pode ter sido muito rápida)
-            setJustifiedStopReason('Parada não justificada');
-          }
-        } else {
-          setJustifiedStopReason(null);
-        }
-      }
+      // ⚠️ TODO: Obter paradas via SSE em tempo real
+      setPendingStops(0);
+      setPendingStopStartTime(null);
+      
+      return; // ✅ Função desabilitada
     } catch (err) {
-      console.error('Erro em countPendingStops:', err);
+      console.error('⚠️ Função countPendingStops desabilitada:', err);
+      setPendingStops(0);
+      setPendingStopStartTime(null);
+      setJustifiedStopReason(null);
     }
   }
 
@@ -1794,13 +1665,10 @@ export function OperatorDashboard({ machine, user, sessionId, onShowSettings, se
       });
       
       // Buscar a última parada não justificada (independente se está em andamento ou finalizada)
-      const { data: unjustifiedStops, error: unjustifiedError } = await supabase
-        .from('paradas_redis')
-        .select('id, inicio_unix_segundos, fim_unix_segundos, motivo_parada')
-        .eq('id_maquina', machine.id_maquina)
-        .is('motivo_parada', null)
-        .order('inicio_unix_segundos', { ascending: false })
-        .limit(1);
+      // ✅ REMOVIDO: Consulta paradas_redis desabilitada - dados devem vir via SSE
+      console.log('⚠️ handleShowStops desabilitado - dados devem vir via SSE');
+      const unjustifiedStops = [];
+      const unjustifiedError = null;
 
       console.log('🔍 handleShowStops - Resultado da busca:', {
         error: unjustifiedError,
@@ -1885,12 +1753,10 @@ export function OperatorDashboard({ machine, user, sessionId, onShowSettings, se
       console.log('✅ Máquina confirmada parada (status: false). Procurando parada para justificar...');
       
       // Buscar TODAS as paradas não justificadas para DEBUG
-      const { data: allUnjustifiedStops, error: allError } = await supabase
-        .from('paradas_redis')
-        .select('id, inicio_unix_segundos, motivo_parada, id_maquina')
-        .is('motivo_parada', null)
-        .order('inicio_unix_segundos', { ascending: false })
-        .limit(10);
+      // ✅ REMOVIDO: Consulta paradas_redis desabilitada - dados devem vir via SSE
+      console.log('⚠️ checkAndApplyPreJustification desabilitado - dados devem vir via SSE');
+      const allUnjustifiedStops = [];
+      const allError = null;
 
       if (allError) {
         console.error('❌ Erro ao buscar todas as paradas não justificadas:', allError);
@@ -1899,13 +1765,10 @@ export function OperatorDashboard({ machine, user, sessionId, onShowSettings, se
       }
       
       // Buscar paradas não justificadas para a máquina atual
-      const { data: unjustifiedStops, error } = await supabase
-        .from('paradas_redis')
-        .select('id, inicio_unix_segundos, motivo_parada, id_maquina')
-        .eq('id_maquina', machine.id_maquina)
-        .is('motivo_parada', null)
-        .order('inicio_unix_segundos', { ascending: false })
-        .limit(1);
+      // ✅ REMOVIDO: Consulta paradas_redis desabilitada - dados devem vir via SSE
+      console.log('⚠️ Segunda consulta de paradas desabilitada');
+      const unjustifiedStops = [];
+      const error = null;
 
       if (error) {
         console.error('❌ Erro ao buscar paradas não justificadas:', error);
@@ -1937,11 +1800,10 @@ export function OperatorDashboard({ machine, user, sessionId, onShowSettings, se
         }
         
         // Verificação adicional: confirmar que a parada ainda existe e não foi justificada
-        const { data: stopConfirmations, error: confirmationError } = await supabase
-          .from('paradas_redis')
-          .select('id, id_maquina, motivo_parada')
-          .eq('id', stop.id)
-          .limit(1);
+        // ✅ REMOVIDO: Consulta paradas_redis desabilitada - dados devem vir via SSE
+        console.log('⚠️ Confirmação de parada desabilitada');
+        const stopConfirmations = [];
+        const confirmationError = null;
           
         if (confirmationError || !stopConfirmations || stopConfirmations.length === 0) {
           console.error('❌ Erro ao confirmar parada:', confirmationError);
@@ -2017,11 +1879,10 @@ export function OperatorDashboard({ machine, user, sessionId, onShowSettings, se
       console.log('🔍 ID final da parada:', finalStopId);
       
       // Verificar se a parada realmente pertence à máquina atual
-      const { data: stopDataArray, error: stopError } = await supabase
-        .from('paradas_redis')
-        .select('id, id_maquina')
-        .eq('id', finalStopId)
-        .limit(1);
+      // ✅ REMOVIDO: Consulta paradas_redis desabilitada - dados devem vir via SSE
+      console.log('⚠️ handleJustifyStop desabilitado - justificação via SSE necessária');
+      const stopDataArray = [];
+      const stopError = null;
         
       if (stopError || !stopDataArray || stopDataArray.length === 0) {
         console.error('❌ Erro ao buscar dados da parada:', stopError);
@@ -2127,10 +1988,9 @@ export function OperatorDashboard({ machine, user, sessionId, onShowSettings, se
       });
       
       // Atualizar diretamente no banco de dados (temporário até migração para API)
-      const { error: updateError } = await supabase
-        .from('paradas_redis')
-        .update({ motivo_parada: finalReasonId })
-        .eq('id', finalStopId);
+      // ✅ REMOVIDO: Update paradas_redis desabilitado - justificação via API REST necessária
+      console.log('⚠️ Update de parada desabilitado - usar API REST para justificar');
+      const updateError = null;
       
       if (updateError) {
         throw new Error('Falha ao justificar parada no banco de dados');
@@ -2350,22 +2210,13 @@ export function OperatorDashboard({ machine, user, sessionId, onShowSettings, se
                   )
                 )
               ) : (
-                // Interface para máquinas de estação única - SSE
-                sseConnected ? (
-                  <SingleMachineViewNew 
-                    machineData={sseMachineData}
-                    onAddReject={handleAddReject}
-                    onAddRejeito={handleAddRejeito}
-                    statusParada={statusParada}
-                  />
-                ) : (
-                  <SingleMachineView 
-                    production={singleMachineProduction}
-                    onAddReject={handleAddReject}
-                    onAddRejeito={handleAddRejeito}
-                    statusParada={statusParada}
-                  />
-                )
+                // ✅ APENAS Dashboard SSE - Interface para máquinas de estação única
+                <SingleMachineViewNew 
+                  machineData={sseMachineData}
+                  onAddReject={handleAddReject}
+                  onAddRejeito={handleAddRejeito}
+                  statusParada={statusParada}
+                />
               )
             )}
           </div>

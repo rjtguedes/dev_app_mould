@@ -11,22 +11,23 @@ import { supabase, handleJWTError } from './lib/supabase';
 import { decryptCredentials } from './lib/crypto';
 import { useWakeLock } from './hooks/useWakeLock';
 import { getDeviceId } from './lib/device';
+import { useAuth } from './hooks/useAuth';
 import type { Machine } from './types/machine';
 
 function App() {
   const [pin, setPin] = useState<string>('');
-  const [error, setError] = useState<string>('');
-  const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
-  const [authenticated, setAuthenticated] = useState(false);
   const [currentMachine, setCurrentMachine] = useState<Machine | null>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [initialLoading, setInitialLoading] = useState(true);
-  const [secondaryOperator, setSecondaryOperator] = useState<{ id: number; nome: string } | null>(null);
   const [twoOperators, setTwoOperators] = useState(false);
   const [showTestSSE, setShowTestSSE] = useState(false);
   const [showTestContexto, setShowTestContexto] = useState(false);
   const [showDiagnostico, setShowDiagnostico] = useState(false);
+  
+  // ✅ NOVO: Usando hook de autenticação da API REST
+  const { isAuthenticated, operator, secondaryOperator, isLoading, error, login, logout } = useAuth();
+  
   useWakeLock();
 
   // 🧪 Atalhos para testes (Ctrl+Shift+S, Ctrl+Shift+C, Ctrl+Shift+D)
@@ -48,16 +49,27 @@ function App() {
   }, []);
 
   useEffect(() => {
-    checkSession();
+    // ✅ NOVO: Verificação simplificada - apenas carregar máquina se necessário
+    const initializeApp = async () => {
+      // Para modo admin, ainda verificamos sessão Supabase
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session) {
+        console.log('📧 Sessão admin Supabase detectada');
+        checkMachine();
+      }
+      setInitialLoading(false);
+    };
 
+    initializeApp();
+
+    // ✅ NOVO: Listener apenas para modo admin (compatibilidade temporária)
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       if (event === 'SIGNED_IN') {
-        setAuthenticated(true);
+        console.log('📧 Login admin Supabase detectado');
         checkMachine();
       } else if (event === 'SIGNED_OUT') {
-        setAuthenticated(false);
+        console.log('📧 Logout Supabase detectado');
         setCurrentMachine(null);
-        setSecondaryOperator(null);
       }
     });
 
@@ -65,12 +77,8 @@ function App() {
   }, []);
 
   const checkSession = async () => {
-    const { data: { session } } = await supabase.auth.getSession();
-    if (session) {
-      setAuthenticated(true);
-      checkMachine();
-    }
-    setInitialLoading(false);
+    // ✅ REMOVIDA: Função não mais necessária, mantida apenas para compatibilidade
+    console.log('⚠️ checkSession chamada - funcionalidade migrada para useAuth');
   };
 
   const checkMachine = async () => {
@@ -107,160 +115,77 @@ function App() {
 
   const handleNumberClick = (number: string) => {
     const maxLength = twoOperators ? 8 : 4;
-    if (pin.length < maxLength && !loading && !success) {
+    if (pin.length < maxLength && !isLoading && !success) {
       setPin(prev => prev + number);
     }
   };
 
   const handleDelete = () => {
     setPin(prev => prev.slice(0, -1));
-    setError('');
     setSuccess(false);
-    setSecondaryOperator(null);
+    // ✅ NOVO: Error e secondaryOperator agora são gerenciados pelo useAuth
   };
 
   const handleToggleChange = (newValue: boolean) => {
     setTwoOperators(newValue);
     setPin('');
-    setError('');
     setSuccess(false);
-    setSecondaryOperator(null);
+    // ✅ NOVO: Error e secondaryOperator agora são gerenciados pelo useAuth
   };
 
+  // ✅ NOVA função de login usando API REST
   const handleLogin = async () => {
     try {
-      setLoading(true);
-      setError('');
-      setSecondaryOperator(null);
+      console.log('🔐 Iniciando login via API REST');
 
-      const expectedLength = twoOperators ? 8 : 4;
-      if (pin.length !== expectedLength) {
-        throw new Error(`PIN deve ter ${expectedLength} dígitos`);
-      }
-
+      // Verificar se é modo admin (PIN 5777) - manter compatibilidade temporária
       const primaryPin = pin.slice(0, 4);
-      const secondaryPin = twoOperators ? pin.slice(4, 8) : null;
-
-      console.log('Iniciando login com PINs:', { primaryPin, secondaryPin, twoOperators });
-
-      // Verificar se é modo admin (PIN 5777)
       if (primaryPin === '5777') {
-        console.log('Modo admin ativado com PIN 5777');
+        console.log('⚠️ Modo admin (5777) - mantendo fluxo Supabase temporariamente');
         
         try {
-          // Usar o PIN 5777 para descriptografar as credenciais reais do admin
           const credentials = await decryptCredentials('5777');
-          console.log('Credenciais admin descriptografadas:', { email: credentials.email });
-
           const { error: loginError } = await supabase.auth.signInWithPassword({
             email: credentials.email,
             password: credentials.password,
           });
 
           if (loginError) {
-            console.error('Erro no login admin:', loginError);
             throw new Error('Erro ao acessar modo admin');
           }
 
-          console.log('Modo admin ativado com sucesso');
           setSuccess(true);
           setTimeout(() => {
-            setAuthenticated(true);
             checkMachine();
           }, 1000);
           return;
         } catch (adminError) {
-          console.error('Erro ao descriptografar credenciais admin:', adminError);
-          throw new Error('PIN admin inválido ou credenciais não encontradas');
+          console.error('Erro no modo admin:', adminError);
+          throw new Error('PIN admin inválido');
         }
       }
 
-      // Login normal com PIN primário
-      const credentials = await decryptCredentials(primaryPin);
-      console.log('Credenciais descriptografadas:', { email: credentials.email });
-
-      const { error: loginError } = await supabase.auth.signInWithPassword({
-        email: credentials.email,
-        password: credentials.password,
+      // ✅ Login via API REST 
+      const result = await login({
+        pin,
+        twoOperators,
+        id_maquina: currentMachine?.id_maquina
       });
 
-      if (loginError) {
-        console.error('Erro no login:', loginError);
-        throw loginError;
-      }
-
-      // Verificar se há segundo operador
-      if (twoOperators && secondaryPin && secondaryPin.length === 4) {
-        try {
-          console.log('=== INÍCIO BUSCA SEGUNDO OPERADOR ===');
-          console.log('PIN secundário:', secondaryPin);
-          console.log('twoOperators:', twoOperators);
-          
-          // Verificar se o PIN secundário é válido antes de buscar
-          if (secondaryPin === '0000' || secondaryPin === '00000000') {
-            console.log('PIN secundário é zero - pulando busca do segundo operador');
-          } else {
-            // Buscar o segundo operador diretamente na tabela operator_fast_acess
-            console.log('Buscando operador na tabela operator_fast_acess por PIN:', secondaryPin);
-            const { data: fastAccessData, error: fastAccessError } = await supabase
-              .from('operator_fast_acess')
-              .select('operador')
-              .eq('PIN', parseInt(secondaryPin))
-              .single();
-
-            console.log('Resultado da busca em operator_fast_acess:', { fastAccessData, fastAccessError });
-
-            if (fastAccessError) {
-              console.log('Segundo operador não encontrado em operator_fast_acess:', fastAccessError);
-              // Continua sem segundo operador
-            } else if (fastAccessData?.operador) {
-              // Buscar os dados completos do operador
-              console.log('Buscando dados completos do operador ID:', fastAccessData.operador);
-              const { data: operatorData, error: operatorError } = await supabase
-                .from('operador')
-                .select('id, nome')
-                .eq('id', fastAccessData.operador)
-                .eq('Delete', false)
-                .single();
-
-              console.log('Resultado da busca do operador:', { operatorData, operatorError });
-
-              if (operatorError) {
-                console.log('Erro ao buscar dados do operador:', operatorError);
-                // Continua sem segundo operador
-              } else {
-                setSecondaryOperator(operatorData);
-                console.log('Segundo operador definido no estado:', operatorData);
-                console.log('Estado secondaryOperator após set:', operatorData);
-              }
-            } else {
-              console.log('PIN secundário não tem operador associado');
-              // Continua sem segundo operador
-            }
-          }
-        } catch (secondaryErr) {
-          console.log('Erro ao buscar segundo operador:', secondaryErr);
-          // Continua sem segundo operador
-        }
-        console.log('=== FIM BUSCA SEGUNDO OPERADOR ===');
+      if (result.success) {
+        console.log('✅ Login realizado com sucesso via API REST');
+        setSuccess(true);
+        setTimeout(() => {
+          checkMachine();
+        }, 1000);
       } else {
-        console.log('Não há segundo operador:', { twoOperators, secondaryPin });
+        throw new Error(result.error || 'Erro no login');
       }
 
-      console.log('Login realizado com sucesso');
-      setSuccess(true);
-      setTimeout(() => {
-        setAuthenticated(true);
-        checkMachine();
-      }, 1000);
     } catch (err) {
-      console.error('Erro completo no login:', err);
-      setError(err instanceof Error ? err.message : 'Erro ao fazer login');
+      console.error('❌ Erro no login:', err);
       setPin('');
       setSuccess(false);
-      setSecondaryOperator(null);
-    } finally {
-      setLoading(false);
     }
   };
 
@@ -327,7 +252,7 @@ function App() {
     );
   }
 
-  if (authenticated) {
+  if (isAuthenticated) {
     if (showSettings) {
       return <Settings onBack={() => setShowSettings(false)} onMachineSelect={handleMachineSelect} />;
     }
@@ -338,6 +263,7 @@ function App() {
           initialMachine={currentMachine} 
           onShowSettings={() => setShowSettings(true)}
           secondaryOperator={secondaryOperator}
+          operator={operator} // ✅ NOVO: Passando dados do operador da API REST
         />
       );
     }
@@ -419,7 +345,7 @@ function App() {
           ))}
         </div>
 
-        {loading && (
+        {isLoading && (
           <div className="mb-6 text-white flex items-center gap-2">
             <Loader2 className="w-5 h-5 animate-spin" />
             <span>Verificando...</span>
@@ -445,7 +371,7 @@ function App() {
           className={`mt-6 ${
             twoOperators ? 'scale-110' : 'scale-105'
           }`}
-          disabled={loading || success}
+          disabled={isLoading || success}
         />
       </div>
     </div>

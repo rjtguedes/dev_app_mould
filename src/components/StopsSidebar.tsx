@@ -62,29 +62,12 @@ export function StopsSidebar({ isOpen, onClose, onJustify, machineId }: StopsSid
     }
   }, [isOpen, machineId]);
 
+  // ✅ DESABILITADO: Subscription paradas via Supabase - dados devem vir via SSE
   React.useEffect(() => {
-    const subscription = supabase
-      .channel('paradas_changes')
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'paradas',
-          filter: `id_maquina=eq.${machineId}`,
-        },
-        (payload) => {
-          if (payload.eventType === 'INSERT' && !payload.new.motivo_parada) {
-            setStops(prev => [payload.new as MachineStop, ...prev]);
-          } else if (payload.eventType === 'UPDATE') {
-            setStops(prev => prev.filter(stop => stop.id !== payload.new.id));
-          }
-        }
-      )
-      .subscribe();
-
+    console.log('⚠️ Subscription paradas desabilitada - dados devem vir via SSE');
+    
     return () => {
-      subscription.unsubscribe();
+      // Cleanup se necessário
     };
   }, [machineId]);
 

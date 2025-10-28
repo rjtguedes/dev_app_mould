@@ -14,9 +14,10 @@ interface MachineSelectionProps {
   initialMachine: Machine;
   onShowSettings: () => void;
   secondaryOperator?: { id: number; nome: string } | null;
+  operator?: { id_operador: number; nome: string } | null; // ✅ NOVO: Dados do operador da API REST
 }
 
-export function MachineSelection({ initialMachine, onShowSettings, secondaryOperator }: MachineSelectionProps) {
+export function MachineSelection({ initialMachine, onShowSettings, secondaryOperator, operator }: MachineSelectionProps) {
   const [selectionError, setSelectionError] = useState<string | null>(null);
   const [selectedMachine, setSelectedMachine] = useState<Machine>(initialMachine);
   const [user, setUser] = useState<User | null>(null);
@@ -285,38 +286,44 @@ export function MachineSelection({ initialMachine, onShowSettings, secondaryOper
     checkActiveSession();
   }, [isAdminMode, operatorId]); // Executar quando isAdminMode ou operatorId mudar
 
-  // Carregar operador
+  // ✅ NOVO: Usar dados do operador da API REST
   useEffect(() => {
-    async function loadOperator() {
-      if (!user) return;
-      
-      try {
-        console.log('Buscando operador para usuário:', user.id);
-        const { data, error } = await supabase
-          .from('operador')
-          .select('id')
-          .eq('user', user.id)
-          .eq('Delete', false)
-          .single();
-
-        if (error) {
-          console.error('Erro ao buscar operador:', error);
-          throw error;
-        }
+    if (operator) {
+      console.log('✅ Usando operador da API REST:', operator);
+      setOperatorId(operator.id_operador);
+    } else {
+      // ⚠️ Fallback para modo admin (Supabase)
+      async function loadOperatorFromSupabase() {
+        if (!user) return;
         
-        if (data) {
-          setOperatorId(data.id);
-        } else {
-          console.log('Nenhum operador encontrado para o usuário');
-        }
-      } catch (err) {
-        console.error('Error loading operator:', err);
-        setSelectionError('Erro ao carregar operador');
-      }
-    }
+        try {
+          console.log('⚠️ Fallback: Buscando operador no Supabase para usuário:', user.id);
+          const { data, error } = await supabase
+            .from('operador')
+            .select('id')
+            .eq('user', user.id)
+            .eq('Delete', false)
+            .single();
 
-    loadOperator();
-  }, [user]);
+          if (error) {
+            console.error('Erro ao buscar operador:', error);
+            throw error;
+          }
+          
+          if (data) {
+            setOperatorId(data.id);
+          } else {
+            console.log('Nenhum operador encontrado para o usuário');
+          }
+        } catch (err) {
+          console.error('Error loading operator:', err);
+          setSelectionError('Erro ao carregar operador');
+        }
+      }
+
+      loadOperatorFromSupabase();
+    }
+  }, [operator, user]);
 
   // Carregar máquinas e definir última máquina usada
   useEffect(() => {
@@ -402,6 +409,7 @@ export function MachineSelection({ initialMachine, onShowSettings, secondaryOper
           sessionId={isAdminMode ? null : sessionId} // Para admin, sempre null
           onShowSettings={onShowSettings}
           secondaryOperator={secondaryOperator}
+          operator={operator} // ✅ NOVO: Passando dados do operador da API REST
         />
         
         {/* 🧪 Teste SSE Inline */}

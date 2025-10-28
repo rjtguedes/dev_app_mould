@@ -43,7 +43,21 @@ export interface ForcarParadaRequest {
   id_motivo: number;
 }
 
+export interface LoginRequest {
+  pin: number;
+  id_maquina?: number;  // Opcional
+}
+
 // ==================== TIPOS DE RESPONSE ====================
+
+export interface LoginResponse {
+  id_operador: number;
+  nome: string;
+  empresa: number;
+  cargo: string;
+  ativo: boolean;
+  id_empresa: number;
+}
 
 export interface APIResponse<T = any> {
   success: boolean;
@@ -91,6 +105,15 @@ class APIService {
         error: error instanceof Error ? error.message : 'Erro desconhecido'
       };
     }
+  }
+
+  // ==================== AUTENTICAÇÃO ====================
+
+  async login(request: LoginRequest): Promise<APIResponse<LoginResponse>> {
+    return this.request<LoginResponse>(API_ENDPOINTS.login, {
+      method: 'POST',
+      body: JSON.stringify(request)
+    });
   }
 
   // ==================== SESSÃO ====================

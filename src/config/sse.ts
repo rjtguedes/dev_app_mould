@@ -22,6 +22,9 @@ export function getAPIUrl(endpoint: string): string {
 
 // URLs dos endpoints
 export const API_ENDPOINTS = {
+  // Autenticação
+  login: '/api/auth/login',
+  
   // Sessão
   iniciarSessao: '/api/sessao/iniciar',
   finalizarSessao: '/api/sessao/finalizar',

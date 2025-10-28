@@ -60,25 +60,10 @@ export function useRealtimeMachines(machineId?: number) {
   useEffect(() => {
     fetchMachines();
 
-    if (!realtimeEnabled) return;
-
-    const subscription = supabase
-      .channel('machines_changes')
-      .on('postgres_changes', 
-        { 
-          event: 'UPDATE', 
-          schema: 'public', 
-          table: 'Maquinas',
-          filter: machineId ? `id_maquina=eq.${machineId}` : undefined
-        },
-        (payload) => {
-          debouncedUpdate(payload.new as Machine);
-        }
-      )
-      .subscribe();
-
+    // ✅ DESABILITADO: Subscription Supabase - dados devem vir via SSE
+    console.log('⚠️ Subscription Maquinas desabilitada - dados via SSE');
+    
     return () => {
-      subscription.unsubscribe();
       debouncedUpdate.cancel();
     };
   }, [machineId, debouncedUpdate, realtimeEnabled]);

@@ -163,32 +163,12 @@ export function useSingleMachineProduction(machineId: number | null) {
 
     fetchData();
 
-    // Polling a cada 60 segundos para machine_stats
-    intervalId = setInterval(fetchData, 60000);
-
-    // Realtime apenas para machine_parameters (não para machine_stats)
-    const subscription = supabase
-      .channel('single_machine_production')
-      .on('postgres_changes', 
-        { 
-          event: '*', 
-          schema: 'public', 
-          table: 'machine_parameters',
-          filter: `id_maquina=eq.${machineId}`
-        },
-        () => {
-          // Recarregar dados quando houver mudanças
-          fetchData();
-        }
-      )
-      .subscribe();
+    // ✅ DESABILITADO: Polling e subscription via Supabase - dados devem vir via SSE
+    console.log('⚠️ Subscription single machine desabilitada - dados devem vir via SSE');
 
     return () => {
       isMounted = false;
-      if (intervalId) {
-        clearInterval(intervalId);
-      }
-      subscription.unsubscribe();
+      // Cleanup se necessário
     };
   }, [machineId]);
 

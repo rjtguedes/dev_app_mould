@@ -142,39 +142,8 @@ export function useChildMachinesProduction(parentMachineId: number, useWebSocket
           });
         }
 
-        // Configurar realtime subscription após buscar os dados
-        // Apenas se não estiver usando WebSocket exclusivamente
-        if (childMachines && childMachines.length > 0 && !subscription && !useWebSocketOnly) {
-          const machineIds = childMachines.map(m => m.id_maquina).join(',');
-          
-          subscription = supabase
-            .channel('child_machines_production')
-            .on('postgres_changes', 
-              { 
-                event: '*', 
-                schema: 'public', 
-                table: 'machine_stats',
-                filter: `id_maquina=in.(${machineIds})`
-              },
-              () => {
-                // Recarregar dados quando houver mudanças
-                fetchData();
-              }
-            )
-            .on('postgres_changes', 
-              { 
-                event: '*', 
-                schema: 'public', 
-                table: 'machine_parameters',
-                filter: `id_maquina=in.(${machineIds})`
-              },
-              () => {
-                // Recarregar dados quando houver mudanças
-                fetchData();
-              }
-            )
-            .subscribe();
-        }
+        // ✅ DESABILITADO: Subscription máquinas filhas via Supabase - dados devem vir via SSE
+        console.log('⚠️ Subscription child machines desabilitada - dados devem vir via SSE');
 
       } catch (err) {
         console.error('Error fetching child machines production:', err);
