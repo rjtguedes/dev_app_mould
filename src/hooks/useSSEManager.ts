@@ -815,13 +815,131 @@ export function useSSEManager(options: SSEManagerOptions) {
       
       return;
     }
+    // ✅ NOVO: Handler para evento context_update
+    else if (data.type === 'context_update') {
+      console.log('🔄 SSE Manager: Processando atualização de contexto:', data);
+      
+      // Validar estrutura da mensagem
+      if (!data.context || !data.id_maquina) {
+        console.warn('⚠️ SSE Manager: context_update sem context ou id_maquina, ignorando:', data);
+        return;
+      }
+      
+      const contextUpdate = data.context;
+      const targetMachineId = data.id_maquina;
+      
+      // Verificar se é para a máquina atual
+      if (targetMachineId !== machineId) {
+        console.log(`ℹ️ SSE Manager: context_update para máquina diferente (${targetMachineId} vs ${machineId}), ignorando`);
+        return;
+      }
+      
+      // Normalizar estrutura do contexto recebido
+      // O backend envia: context { producao_mapa, producao_turno, ... }
+      // Precisamos adaptar para o formato esperado pela UI
+      const normalizedContext = {
+        id_maquina: contextUpdate.id || targetMachineId,
+        nome: contextUpdate.nome,
+        ativa: contextUpdate.ativa ?? true,
+        status: contextUpdate.ativa ?? true,
+        velocidade: 0, // Não vem no context_update
+        last_updated: contextUpdate.last_updated || Math.floor(Date.now() / 1000),
+        
+        // Normalizar producao_mapa usando helper existente
+        producao_mapa: contextUpdate.producao_mapa ? mapProducaoAtiva(contextUpdate.producao_mapa) : null,
+        
+        // Normalizar producao_turno
+        producao_turno: contextUpdate.producao_turno ? {
+          ...contextUpdate.producao_turno,
+          sinais: contextUpdate.producao_turno.sinais ?? 0,
+          sinais_validos: contextUpdate.producao_turno.sinais_validos ?? contextUpdate.producao_turno.sinais ?? 0,
+          rejeitos: contextUpdate.producao_turno.rejeitos ?? 0
+        } : null,
+        
+        // Extrair sessao_operador dos sinais/sinais_validos do contexto
+        // Os sinais da sessão vêm de context.sinais e context.sinais_validos
+        // Os rejeitos da sessão podem vir de producao_mapa.rejeitos ou serem calculados
+        sessao_operador: {
+          id_sessao: contextUpdate.sessoes && contextUpdate.sessoes.length > 0 ? contextUpdate.sessoes[0] : null,
+          sinais: contextUpdate.sinais ?? 0,
+          sinais_validos: contextUpdate.sinais_validos ?? contextUpdate.sinais ?? 0,
+          // Rejeitos podem vir de producao_mapa.rejeitos (se for sessão atual) ou ser 0
+          rejeitos: contextUpdate.producao_mapa?.rejeitos ?? 0,
+          tempo_decorrido_segundos: contextUpdate.producao_mapa?.tempo_decorrido_segundos ?? 0,
+          tempo_paradas_segundos: contextUpdate.producao_mapa?.tempo_paradas_segundos ?? 0,
+          tempo_valido_segundos: contextUpdate.producao_mapa?.tempo_valido_segundos ?? 0
+        },
+        
+        parada_ativa: null, // context_update não traz parada ativa
+        multipostos: contextUpdate.multipostos ?? false
+      };
+      
+      // Atualizar dados da máquina com merge inteligente (evitar zerar contadores)
+      setMachineData(prev => {
+        if (!prev || !prev.contexto) {
+          // Primeira atualização, criar estrutura completa
+          return {
+            contexto: normalizedContext
+          };
+        }
+        
+        // Merge inteligente: manter valores anteriores se os novos estiverem zerados
+        const prevCtx = prev.contexto;
+        const now = Date.now();
+        const prevUpdated = prevCtx.last_updated || now;
+        const freshWindowMs = 2 * 60 * 1000; // 2 min
+        
+        const prevSessao = prevCtx.sessao_operador || {};
+        const nextSessao = normalizedContext.sessao_operador || {};
+        
+        const prevMapa = prevCtx.producao_mapa || {};
+        const nextMapa = normalizedContext.producao_mapa || {};
+        
+        const shouldKeepSessionCounts =
+          (prevSessao.sinais > 0 || prevSessao.sinais_validos > 0 || prevSessao.rejeitos > 0) &&
+          (nextSessao.sinais === 0 && (nextSessao.sinais_validos ?? 0) === 0 && (nextSessao.rejeitos ?? 0) === 0) &&
+          (now - prevUpdated < freshWindowMs);
+        
+        const shouldKeepMapaCounts =
+          (prevMapa.sinais > 0 || prevMapa.sinais_validos > 0 || prevMapa.rejeitos > 0) &&
+          (nextMapa && nextMapa.sinais === 0 && (nextMapa.sinais_validos ?? 0) === 0 && (nextMapa.rejeitos ?? 0) === 0) &&
+          (now - prevUpdated < freshWindowMs);
+        
+        console.log('🔄 SSE Manager: Atualizando contexto com context_update:', {
+          id: normalizedContext.id_maquina,
+          nome: normalizedContext.nome,
+          sinais: normalizedContext.sessao_operador?.sinais,
+          sinais_validos: normalizedContext.sessao_operador?.sinais_validos,
+          preservando_sessao: shouldKeepSessionCounts,
+          preservando_mapa: shouldKeepMapaCounts
+        });
+        
+        return {
+          contexto: {
+            ...prevCtx,
+            ...normalizedContext,
+            // Preservar contadores se necessário
+            sessao_operador: shouldKeepSessionCounts ? { ...nextSessao, ...prevSessao } : nextSessao,
+            producao_mapa: shouldKeepMapaCounts ? { ...nextMapa, sinais: prevMapa.sinais, sinais_validos: prevMapa.sinais_validos, rejeitos: prevMapa.rejeitos } : nextMapa,
+            // Manter velocidade e status se não vierem no update
+            velocidade: normalizedContext.velocidade || prevCtx.velocidade || 0,
+            status: normalizedContext.status ?? prevCtx.status ?? true,
+            // Manter parada_ativa se existir (não vem no context_update)
+            parada_ativa: prevCtx.parada_ativa || normalizedContext.parada_ativa,
+            last_updated: normalizedContext.last_updated || now
+          }
+        };
+      });
+      
+      return;
+    }
     // ✅ IGNORAR fallbacks que podem estar vazios - só atualizar se for initial_context completo
     else {
       console.warn(`⚠️ SSE Manager: Tipo de mensagem desconhecido ou sem handler: ${data.type}. Ignorando para evitar perda de dados.`);
       // NÃO fazer setMachineData aqui - pode estar vazio ou parcial e sobrescrever dados bons
       return;
     }
-  }, [processInitialContext]);
+  }, [processInitialContext, machineId, unwrap, mapProducaoAtiva]);
 
   // Conexão SSE
   const { isConnected, error: sseError, disconnect, reconnect } = useSSEConnection({
