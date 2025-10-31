@@ -1,5 +1,5 @@
 import FingerprintJS from '@fingerprintjs/fingerprintjs';
-import { supabase } from './supabase';
+// ✅ REMOVIDO: import { supabase } from './supabase'; - não mais necessário
 
 export async function getMacAddress(): Promise<string> {
   try {
@@ -17,29 +17,10 @@ export async function getDeviceId(): Promise<string> {
   const key = 'industrack_device_id';
   let id = localStorage.getItem(key);
   if (!id) {
-    // Gera UUID
+    // ✅ NOVO: Gera UUID simples sem verificar Supabase
     id = crypto.randomUUID();
-    // Verifica unicidade no Supabase
-    const { data, error } = await supabase
-      .from('device_machine')
-      .select('device_id')
-      .eq('device_id', id)
-      .single();
-    if (data) {
-      // Se já existe, gera outro até ser único
-      let tentativas = 0;
-      while (data && tentativas < 5) {
-        id = crypto.randomUUID();
-        const { data: exists } = await supabase
-          .from('device_machine')
-          .select('device_id')
-          .eq('device_id', id)
-          .single();
-        if (!exists) break;
-        tentativas++;
-      }
-    }
     localStorage.setItem(key, id);
+    console.log('📱 Novo Device ID gerado:', id.substring(0, 8) + '...');
   }
   return id;
 }

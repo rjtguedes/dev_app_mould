@@ -117,6 +117,7 @@ GET /api/mapa/{id_mapa}/detalhes
 ```http
 GET /api/motivos-parada
 GET /api/motivos-parada?grupo_maquina=1
+GET /api/motivos-parada?id_maquina=69  # Novo: prioriza motivos específicos da máquina, mescla com grupo e deduplica
 ```
 
 #### **Listar Paradas da Máquina**
@@ -136,6 +137,27 @@ Content-Type: application/json
 {
   "id_motivo": 5,
   "observacoes": "Manutenção preventiva"  // Opcional
+}
+```
+
+#### **Forçar Parada**
+```http
+POST /api/parada/forcar
+Content-Type: application/json
+
+{
+  "id_maquina": 69,
+  "id_motivo": 15
+}
+```
+
+#### **Retomar Parada Forçada**
+```http
+POST /api/parada/retomar-forcada
+Content-Type: application/json
+
+{
+  "id_maquina": 69
 }
 ```
 
@@ -537,3 +559,82 @@ interface TalaoProducaoRequest {
 - **Validação completa**: Dados consistentes no Supabase
 
 **A correção garante que o sistema funcione exatamente como o usuário especificou!** 🎉
+
+---
+
+## 🏁 **COMANDOS DE FINALIZAÇÃO**
+
+### **Finalizar Sessão**
+```http
+POST /api/sessao/finalizar
+Content-Type: application/json
+
+{
+  "id_maquina": 135,
+  "id_operador": 1,
+  "motivo": "Sessão finalizada pelo operador"
+}
+```
+
+**Resposta:**
+```json
+{
+  "success": true,
+  "message": "Sessão finalizada com sucesso",
+  "data": {
+    "id_sessao": 123,
+    "tempo_sessao_segundos": 7200,
+    "sinais_totais": 150,
+    "rejeitos_totais": 5,
+    "sinais_validos": 145
+  }
+}
+```
+
+### **Finalizar Talão**
+```http
+POST /api/talao/finalizar
+Content-Type: application/json
+
+{
+  "id_maquina": 135,
+  "id_talao": 101,
+  "estacao_numero": 1,
+  "quantidade_produzida": 45,
+  "motivo": "Produção concluída"
+}
+```
+
+**Resposta:**
+```json
+{
+  "success": true,
+  "message": "Talão finalizado com sucesso",
+  "data": {
+    "id_talao": 101,
+    "quantidade_solicitada": 50,
+    "quantidade_produzida": 45,
+    "tempo_producao_segundos": 1800,
+    "status": "concluido"
+  }
+}
+```
+
+### **📋 Funcionalidades Implementadas:**
+
+#### **🏁 Finalizar Sessão:**
+- **Botão no modal**: Sempre visível, permite finalizar sessão atual
+- **Dados enviados**: ID da máquina, operador e motivo
+- **Ação**: Encerra sessão e pode redirecionar para login
+
+#### **🎯 Finalizar Talão Individual:**
+- **Botão por produto**: Aparece apenas em produtos selecionados
+- **Controle granular**: Finaliza apenas o talão específico
+- **Quantidade flexível**: Pode finalizar com quantidade diferente da planejada
+- **Ação**: Remove o talão da produção ativa
+
+#### **💡 UX/UI Melhoradas:**
+- **Botões claros**: "🏁 Finalizar Sessão" e "🏁 Finalizar" 
+- **Cores intuitivas**: Vermelho para finalização (atenção)
+- **Confirmação visual**: Loading states e feedback
+- **Touch-friendly**: Tamanhos adequados para tablet

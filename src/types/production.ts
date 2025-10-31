@@ -1,130 +1,69 @@
-interface Product {
-  id: number;
-  referencia: string;
-  descricao: string | null;
-  consumo_signal: number | null;
-  UM: string | null;
-  cod_produto: number | null;
-}
+// 🗺️ Tipos para Mapas de Produção
 
-interface Color {
+export interface MapaProducao {
   id: number;
-  descricao: string | null;
-  cod: number | null;
-}
-
-export interface WeekMachine {
-  id: number;
-  created_at: string;
-  semana: number;
-  id_maquina: number;
-  produto: Product;
-  quantidade: number;
-  planos: any;
-  ops: any;
-  quantidade_produzida: number;
-  saldo: number;
-  sequencia: number;
-  minutos_estimado: number;
+  nome: string;
+  ativo: boolean;
   id_empresa: number;
-  status: string;
-  grade_semana_maquina?: WeekMachineGrade[];
 }
 
-export interface WeekMachineGrade {
+// Estrutura real retornada pelo backend - Alocações de Mapas
+export interface AlocacaoMapa {
+  id_alocacao: number;
+  id_mapa: number;
+  maquina_id: number;
+  codmapa: string;
+  cor_descricao: string | null;
+  posicao_ordem: number;
+  prioridade_alocacao: string;
+  prioridade: string | null;
+  alocacao_concluida: boolean;
+  mapa_concluido: boolean | null;
+  data_inicio: number | null;
+  data_fim: number | null;
+  data_inicio_alocacao: number;
+  data_fim_alocacao: number | null;
+  ciclos_calculados: number | null;
+  duracao_calculada_segundos: number | null;
+  duracao_real_s: number | null;
+  paradas_calculadas_segundos: number | null;
+  paradas_real_segundos: number | null;
+  quebra_porcentagem: number | null;
+  grupo_maquina_id: number | null;
+  ordens_origem: Array<{ id_ordem: number }>;
+  planos_origem: Array<{ id_plano: number }>;
+  debug_mapa_encontrado?: boolean;
+  debug_mapa_id_solicitado?: number;
+}
+
+export interface EstacaoMapa {
   id: number;
-  id_semana_maquina: number;
-  tamanho: string;
-  quantidade: number;
-  status: 'pendente' | 'em_producao' | 'concluido';
-  created_at: string;
-  tempo_total_maquina: number;
-  sequence: number;
   numero_estacao: number;
-  id_maquina: number;
-  id_matriz: number | null;
-  matriz_pai: number | null;
-  matriz_repetida: boolean;
-  repetitions: number;
-  quantidade_produzida: number;
-  saldo: number;
-  matriz?: {
-    id: number;
-    identificador: string;
-    tamanho: string;
-  };
-  data_inicio?: string;
-  data_fim?: string;
+  grupo_maquina_id: number;
+  posicao_ordem: number;
+  taloes: TalaoEstacao[];
 }
 
-export interface ProductionTicket {
-  IdTalao: number;
-  NroOP: number | null;
-  SeqOP: number | null;
-  NroTalao: number | null;
-  CCusto: number | null;
-  OcoGrd: string | null;
-  RegProducao: number | null;
-  Tamanho: string | null;
-  Qtd: number | null;
-  status: boolean | null;
+export interface TalaoEstacao {
+  id: number;
+  talao_referencia: string;
+  talao_tamanho: string;
+  quantidade: number;
+  tempo_ciclo_segundos: number;
 }
 
-export type ProductionFinishType = 'partial' | 'complete';
-
-export interface ChildMachineProduction {
-  stats: {
-    id_maquina: number;
-    velocidade: number;
-    disponibilidade: number;
-    produzido: number;
-    rejeitos: number;
-    minutos_disponivel: number;
-    ultimo_sinal: number;
-  };
-  parameters: {
-    id_maquina: number;
-    producao_ativa: boolean;
-    grade_semana_maquina: number | null;
-    produto?: Product;
-  };
-  machine: {
-    id_maquina: number;
-    numero_estacao: number;
-    nome: string;
-    maquina_pai: number | null;
-  };
-  grade: WeekMachineGrade | null;
-  produto?: Product;
-  // Dados do WebSocket para a sessão do operador
-  websocket_data?: {
-    sessao_operador?: {
-      sinais: number;
-      rejeitos: number;
-      tempo_decorrido_segundos: number;
-      tempo_paradas_segundos: number;
-      tempo_valido_segundos: number;
-    };
-    last_signal_timestamp?: number; // Timestamp do último sinal recebido
-    highlight_until?: number; // Timestamp até quando deve destacar a estação
-  };
+export interface MapaDetalhes {
+  id: number;
+  nome: string;
+  ativo: boolean;
+  estacoes: EstacaoMapa[];
 }
 
-export interface SingleMachineProduction {
-  stats: any;
-  parameters: any;
-  machine: any;
-  grade: WeekMachineGrade | null;
-  produto: Product | null;
-  // Dados do WebSocket para a sessão do operador
-  websocket_data?: {
-    sessao_operador?: {
-      sinais: number;
-      rejeitos: number;
-      sinais_validos: number;
-      tempo_decorrido_segundos: number;
-      tempo_paradas_segundos: number;
-      tempo_valido_segundos: number;
-    };
-  };
+export interface TalaoSelecionado {
+  id_talao: number;
+  estacao_numero: number;
+  quantidade: number;
+  tempo_ciclo_segundos?: number;
+  talao_referencia: string;
+  talao_tamanho: string;
 }

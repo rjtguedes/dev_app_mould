@@ -18,6 +18,8 @@ export function useSSEConnection(options: SSEConnectionOptions) {
   const [error, setError] = useState<string | null>(null);
   const eventSourceRef = useRef<EventSource | null>(null);
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const failedAttemptsRef = useRef(0); // ✅ NOVO: Contador de tentativas falhas
+  const maxFailedAttempts = 3; // ✅ NOVO: Limite de tentativas antes de limpar sessão
   
   // Usar refs para callbacks para evitar re-criação
   const onMessageRef = useRef(onMessage);
@@ -45,6 +47,7 @@ export function useSSEConnection(options: SSEConnectionOptions) {
     }
     
     setIsConnected(false);
+    failedAttemptsRef.current = 0; // ✅ NOVO: Resetar contador ao desconectar
   }, []);
 
   const connect = useCallback(() => {
@@ -77,6 +80,7 @@ export function useSSEConnection(options: SSEConnectionOptions) {
         console.log(`✅ SSE: Conectado com sucesso à máquina ${machineId}`);
         setIsConnected(true);
         setError(null);
+        failedAttemptsRef.current = 0; // ✅ NOVO: Resetar contador em sucesso
         onOpenRef.current?.();
       };
 
@@ -102,6 +106,21 @@ export function useSSEConnection(options: SSEConnectionOptions) {
         console.error('❌ SSE: Erro de conexão:', event);
         setIsConnected(false);
         setError('Erro de conexão SSE');
+        
+        // ✅ NOVO: Incrementar contador de tentativas falhas
+        failedAttemptsRef.current += 1;
+        console.log(`⚠️ SSE: Tentativa falha ${failedAttemptsRef.current}/${maxFailedAttempts}`);
+        
+        // ✅ NOVO: Se muitas tentativas falharam, pode ser erro de autenticação
+        if (failedAttemptsRef.current >= maxFailedAttempts) {
+          console.warn('⚠️ SSE: Múltiplas tentativas de conexão falharam - limpando sessão salva');
+          localStorage.removeItem('industrack_active_session');
+          console.log('🧹 SSE: Sessão salva removida após múltiplas falhas de conexão');
+          // Não tentar reconectar mais - deixar usuário fazer login
+          onErrorRef.current?.(event);
+          return;
+        }
+        
         onErrorRef.current?.(event);
 
         // Tentar reconectar

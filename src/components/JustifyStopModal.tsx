@@ -94,21 +94,21 @@ export function JustifyStopModal({
 }: JustifyStopModalProps) {
   if (!isOpen) return null;
 
-  // Separar motivos por grupo da máquina atual
+  // ✅ CORRIGIDO: Separar motivos por grupo da máquina atual
+  // Se machineGroup é null, mostrar TODOS os motivos
   const groupedReasons = stopReasons.reduce((acc, reason) => {
-    // Se a máquina tem um grupo específico
+    // Se a máquina tem um grupo específico, filtrar apenas motivos desse grupo
     if (machineGroup) {
       // Apenas motivos específicos do grupo da máquina atual
       if (reason.grupo_maquina === machineGroup.id) {
         if (!acc.specific) acc.specific = [];
         acc.specific.push(reason);
       }
-      // Motivos de outros grupos (não mostrar)
-      else {
-        // Ignorar motivos de outros grupos
-      }
+      // Ignorar motivos de outros grupos
     } else {
-      // Se a máquina não tem grupo, não mostrar nenhum motivo
+      // ✅ CORRIGIDO: Se a máquina não tem grupo, mostrar TODOS os motivos
+      if (!acc.specific) acc.specific = [];
+      acc.specific.push(reason);
     }
     return acc;
   }, {} as Record<string, StopReason[]>);

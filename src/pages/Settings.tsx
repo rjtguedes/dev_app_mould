@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { ArrowLeft, Box, AlertCircle, Power, Gauge } from 'lucide-react';
-import { useRealtimeMachines } from '../hooks/useRealtimeMachines';
+import { machineStorage } from '../lib/machineStorage';
 import { getDeviceId } from '../lib/device';
 import type { Machine } from '../types/machine';
 import { supabase } from '../lib/supabase';
@@ -18,7 +18,9 @@ interface Parameter {
 }
 
 export function Settings({ onBack, onMachineSelect }: SettingsProps) {
-  const { machines, loading: loadingMachines, error: machinesError } = useRealtimeMachines();
+  const [machines, setMachines] = useState<Machine[]>([]);
+  const [loadingMachines, setLoadingMachines] = useState(true);
+  const [machinesError, setMachinesError] = useState<string | null>(null);
   const [deviceId, setDeviceId] = React.useState<string>('');
   const [parameters, setParameters] = useState<Parameter[]>([]);
   const [selectedMachine, setSelectedMachine] = useState<Machine | null>(null);
@@ -28,16 +30,33 @@ export function Settings({ onBack, onMachineSelect }: SettingsProps) {
   // Novo: Buscar velocidade da machine_stats
   const [machineStats, setMachineStats] = useState<Record<number, number>>({}); // id_maquina -> velocidade
 
+  // ✅ NOVO: Carregar máquinas da API REST
   React.useEffect(() => {
-    async function loadDeviceId() {
+    async function loadInitialData() {
       try {
+        // Carregar Device ID
         const id = await getDeviceId();
         setDeviceId(id);
+        
+        // ✅ NOVO: Buscar máquinas da API REST
+        console.log('📋 Buscando máquinas da API REST...');
+        setLoadingMachines(true);
+        setMachinesError(null);
+        
+        const fetchedMachines = await machineStorage.fetchMachines(true); // Forçar refresh
+        setMachines(fetchedMachines);
+        
+        console.log('✅ Máquinas carregadas:', fetchedMachines.length);
+        
       } catch (err) {
-        console.error('Error getting device id:', err);
+        console.error('❌ Erro ao carregar dados iniciais:', err);
+        setMachinesError(err instanceof Error ? err.message : 'Erro ao carregar máquinas');
+      } finally {
+        setLoadingMachines(false);
       }
     }
-    loadDeviceId();
+    
+    loadInitialData();
   }, []);
 
   useEffect(() => {
@@ -157,33 +176,50 @@ export function Settings({ onBack, onMachineSelect }: SettingsProps) {
 
   const handleMachineSelect = async (machine: Machine) => {
     setSelectedMachine(machine);
+    
+    // ✅ NOVO: Salvar máquina no localStorage PRIMEIRO (prioritário)
     try {
-      if (!deviceId) return;
-      // Atualiza o device_machine no Supabase para associar o novo id_maquina ao device_id atual
-      const { data: existingDevice } = await supabase
-        .from('device_machine')
-        .select('id')
-        .eq('device_id', deviceId)
-        .single();
+      machineStorage.saveCurrentMachine(machine);
+      console.log('✅ Máquina selecionada e salva no localStorage:', machine.nome);
+    } catch (storageError) {
+      console.error('❌ Erro ao salvar no localStorage:', storageError);
+      setError('Erro ao salvar máquina localmente');
+      return; // Se não conseguir salvar localmente, não prosseguir
+    }
 
-      if (existingDevice?.id) {
-        // Atualiza o registro existente
-        const { error } = await supabase
-          .from('device_machine')
-          .update({ id_maquina: machine.id_maquina, active: true })
-          .eq('device_id', deviceId);
-        if (error) throw error;
+    // Ainda mantemos a compatibilidade com device_machine para o modo admin
+    try {
+      if (!deviceId) {
+        // Se não tem deviceId, pular Supabase mas continuar
+        console.warn('⚠️ Device ID não disponível. Pulando atualização Supabase.');
       } else {
-        // Cria novo registro
-        const { error } = await supabase
+        // Atualiza o device_machine no Supabase para associar o novo id_maquina ao device_id atual
+        const { data: existingDevice } = await supabase
           .from('device_machine')
-          .insert({ device_id: deviceId, id_maquina: machine.id_maquina, active: true });
-        if (error) throw error;
+          .select('id')
+          .eq('device_id', deviceId)
+          .single();
+
+        if (existingDevice?.id) {
+          // Atualiza o registro existente
+          const { error } = await supabase
+            .from('device_machine')
+            .update({ id_maquina: machine.id_maquina, active: true })
+            .eq('device_id', deviceId);
+          if (error) throw error;
+        } else {
+          // Cria novo registro
+          const { error } = await supabase
+            .from('device_machine')
+            .insert({ device_id: deviceId, id_maquina: machine.id_maquina, active: true });
+          if (error) throw error;
+        }
       }
     } catch (err) {
-      setError('Erro ao atualizar máquina no dispositivo');
-      console.error('Erro ao atualizar máquina no dispositivo:', err);
+      // Não falhar se Supabase der erro - localStorage é suficiente
+      console.warn('⚠️ Erro ao atualizar device_machine (não crítico):', err);
     }
+    
     onMachineSelect(machine);
   };
 

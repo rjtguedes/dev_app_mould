@@ -13,6 +13,10 @@ interface DashboardHeaderProps {
   velocidade: number;
   statusParada: boolean;
   onRefresh?: () => void;
+  // Novos props para contextos
+  contextoAtivo?: 'sessao' | 'turno' | 'taloes';
+  onContextoChange?: (contexto: 'sessao' | 'turno' | 'taloes') => void;
+  showContextButtons?: boolean;
 }
 
 export function DashboardHeader({
@@ -24,7 +28,10 @@ export function DashboardHeader({
   sidebarCollapsed,
   velocidade,
   statusParada,
-  onRefresh
+  onRefresh,
+  contextoAtivo = 'sessao',
+  onContextoChange,
+  showContextButtons = false
 }: DashboardHeaderProps) {
   return (
     <nav className={`
@@ -33,7 +40,59 @@ export function DashboardHeader({
       ${sidebarCollapsed ? 'left-16' : 'left-64'}
     `}>
       <div className="h-full px-6 flex items-center justify-between">
-        <div className="flex-1" />
+        {/* Botões de Contexto (lado esquerdo) */}
+        {showContextButtons && onContextoChange ? (
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => onContextoChange('sessao')}
+              className={`px-3 py-1.5 text-sm font-semibold rounded-lg backdrop-blur-sm border transition-all duration-200 ${
+                contextoAtivo === 'sessao' 
+                  ? 'bg-green-600 border-green-400 text-white shadow-lg transform scale-105 ring-2 ring-green-400/50' 
+                  : 'bg-green-600/30 hover:bg-green-600/50 border-green-500/30 text-green-200 hover:text-white'
+              }`}
+            >
+              👤 Sessão
+            </button>
+            
+            <button
+              onClick={() => onContextoChange('turno')}
+              className={`px-3 py-1.5 text-sm font-semibold rounded-lg backdrop-blur-sm border transition-all duration-200 ${
+                contextoAtivo === 'turno' 
+                  ? 'bg-blue-600 border-blue-400 text-white shadow-lg transform scale-105 ring-2 ring-blue-400/50' 
+                  : 'bg-blue-600/30 hover:bg-blue-600/50 border-blue-500/30 text-blue-200 hover:text-white'
+              }`}
+            >
+              📊 Turno
+            </button>
+            
+            <button
+              onClick={() => onContextoChange('taloes')}
+              className={`px-3 py-1.5 text-sm font-semibold rounded-lg backdrop-blur-sm border transition-all duration-200 ${
+                contextoAtivo === 'taloes' 
+                  ? 'bg-purple-600 border-purple-400 text-white shadow-lg transform scale-105 ring-2 ring-purple-400/50' 
+                  : 'bg-purple-600/30 hover:bg-purple-600/50 border-purple-500/30 text-purple-200 hover:text-white'
+              }`}
+            >
+              📋 Talões
+            </button>
+
+            {/* Indicador de Destaque do Modo Ativo */}
+            <div className="flex items-center gap-2 px-3 py-1.5 bg-black/50 rounded-lg border border-white/30 ml-3">
+              <span className="text-xs text-white/80 font-medium">EXIBINDO:</span>
+              <span className={`text-sm font-bold tracking-wide ${
+                contextoAtivo === 'sessao' ? 'text-green-300' : 
+                contextoAtivo === 'turno' ? 'text-blue-300' : 'text-purple-300'
+              }`}>
+                {contextoAtivo === 'sessao' ? '👤 SESSÃO OPERADOR' : 
+                 contextoAtivo === 'turno' ? '📊 PRODUÇÃO TURNO' : '📋 PRODUÇÃO TALÕES'}
+              </span>
+            </div>
+          </div>
+        ) : (
+          <div className="flex-1" />
+        )}
+
+        {/* Informações da Máquina e Usuário (lado direito) */}
         <div className="flex items-center gap-4">
           <div className="flex items-center gap-4">
             <span className="text-lg font-bold text-white tracking-tight">{machine.nome}</span>

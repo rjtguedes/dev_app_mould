@@ -2,7 +2,6 @@ import React from 'react';
 import { useState, useEffect } from 'react';
 import { Loader2, Power, Gauge, Box, RefreshCcw } from 'lucide-react';
 import { OperatorDashboard } from './OperatorDashboard';
-import { TestSSEInline } from './TestSSEInline';
 import { useRealtimeMachines } from '../hooks/useRealtimeMachines';
 import { supabase } from '../lib/supabase';
 import { getMacAddress } from '../lib/device';
@@ -25,6 +24,22 @@ export function MachineSelection({ initialMachine, onShowSettings, secondaryOper
   const [showAllMachines, setShowAllMachines] = useState(false);
   const [currentShift, setCurrentShift] = useState<any>(null);
   const [sessionId, setSessionId] = useState<number | null>(null);
+  
+  // ✅ NOVO: Carregar id_sessao salvo na inicialização
+  useEffect(() => {
+    try {
+      const savedSessionStr = localStorage.getItem('industrack_active_session');
+      if (savedSessionStr) {
+        const savedSession = JSON.parse(savedSessionStr);
+        if (savedSession.id_sessao) {
+          console.log('📖 ID da sessão carregado do localStorage:', savedSession.id_sessao);
+          setSessionId(savedSession.id_sessao);
+        }
+      }
+    } catch (error) {
+      console.error('❌ Erro ao carregar sessão salva:', error);
+    }
+  }, []);
   const [loadingSession, setLoadingSession] = useState(true);
   const [isCreatingSession, setIsCreatingSession] = useState(false);
   const [macAddress, setMacAddress] = useState<string>('');
@@ -39,7 +54,9 @@ export function MachineSelection({ initialMachine, onShowSettings, secondaryOper
   // Log quando sessionId mudar
   React.useEffect(() => {
     console.log('MachineSelection - sessionId atualizado:', sessionId);
-  }, [sessionId]);
+    console.log('MachineSelection - isAdminMode:', isAdminMode);
+    console.log('MachineSelection - sessionId que será passado para dashboard:', isAdminMode ? null : sessionId);
+  }, [sessionId, isAdminMode]);
 
   // Log quando selectedMachine mudar
   React.useEffect(() => {
@@ -412,8 +429,6 @@ export function MachineSelection({ initialMachine, onShowSettings, secondaryOper
           operator={operator} // ✅ NOVO: Passando dados do operador da API REST
         />
         
-        {/* 🧪 Teste SSE Inline */}
-        <TestSSEInline machineId={selectedMachine.id_maquina} />
       </>
     );
   }

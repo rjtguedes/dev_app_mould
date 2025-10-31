@@ -26,7 +26,7 @@ export function TestSSEInline({ machineId }: TestSSEInlineProps) {
   });
 
   return (
-    <div className="fixed bottom-4 right-4 z-50">
+    <div className="fixed bottom-4 right-4 z-50" style={{ display: 'none' }}>
       {/* Toggle Button */}
       <button
         onClick={() => setEnabled(!enabled)}
@@ -35,6 +35,7 @@ export function TestSSEInline({ machineId }: TestSSEInlineProps) {
             ? 'bg-green-600 hover:bg-green-700'
             : 'bg-gray-600 hover:bg-gray-700'
         } text-white`}
+        style={{ display: 'none' }}
       >
         {enabled ? '🟢 SSE Ativo' : '🔴 SSE Inativo'}
       </button>

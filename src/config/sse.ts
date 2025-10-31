@@ -40,6 +40,7 @@ export const API_ENDPOINTS = {
   
   // Parada
   forcarParada: '/api/parada/forcar',
+  retomarParada: '/api/parada/retomar-forcada',
   
   // Contexto
   consultarContexto: (machineId: number) => `/api/maquina/${machineId}/contexto`,

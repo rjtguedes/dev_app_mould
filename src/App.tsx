@@ -12,6 +12,7 @@ import { decryptCredentials } from './lib/crypto';
 import { useWakeLock } from './hooks/useWakeLock';
 import { getDeviceId } from './lib/device';
 import { useAuth } from './hooks/useAuth';
+import { machineStorage } from './lib/machineStorage';
 import type { Machine } from './types/machine';
 
 function App() {
@@ -24,11 +25,24 @@ function App() {
   const [showTestSSE, setShowTestSSE] = useState(false);
   const [showTestContexto, setShowTestContexto] = useState(false);
   const [showDiagnostico, setShowDiagnostico] = useState(false);
+  const [searchingMachines, setSearchingMachines] = useState(false);
+  const [showHiddenButton, setShowHiddenButton] = useState(false);
+  const [logoClickCount, setLogoClickCount] = useState(0);
   
   // ✅ NOVO: Usando hook de autenticação da API REST
-  const { isAuthenticated, operator, secondaryOperator, isLoading, error, login, logout } = useAuth();
+  const { isAuthenticated, operator, secondaryOperator, isLoading, error, login, logout, checkSavedSession } = useAuth();
   
   useWakeLock();
+
+  // ✅ NOVO: Se houver erro de autenticação em useAuth, limpar sessão salva e forçar login
+  useEffect(() => {
+    if (error && (error.includes('401') || error.includes('403') || error.includes('não autorizado') || error.includes('autenticação'))) {
+      console.warn('⚠️ App: Erro de autenticação detectado, limpando sessão salva');
+      localStorage.removeItem('industrack_active_session');
+      // Limpar estado de autenticação
+      logout();
+    }
+  }, [error, logout]);
 
   // 🧪 Atalhos para testes (Ctrl+Shift+S, Ctrl+Shift+C, Ctrl+Shift+D)
   useEffect(() => {
@@ -49,15 +63,57 @@ function App() {
   }, []);
 
   useEffect(() => {
-    // ✅ NOVO: Verificação simplificada - apenas carregar máquina se necessário
+    // ✅ NOVO: Inicialização com verificação de sessão salva
     const initializeApp = async () => {
-      // Para modo admin, ainda verificamos sessão Supabase
-      const { data: { session } } = await supabase.auth.getSession();
-      if (session) {
-        console.log('📧 Sessão admin Supabase detectada');
-        checkMachine();
+      try {
+        console.log('🚀 Inicializando aplicação...');
+        
+        // Para modo admin, ainda verificamos sessão Supabase
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session) {
+          console.log('📧 Sessão admin Supabase detectada');
+          checkMachine();
+          setInitialLoading(false);
+          return;
+        }
+
+        // ✅ NOVO: Verificar se há sessão ativa salva (para modo operador)
+        const savedSession = checkSavedSession();
+        if (savedSession) {
+          console.log('✅ Sessão ativa encontrada, restaurando autenticação...');
+          
+          // Carregar máquina salva
+          const savedMachine = machineStorage.getCurrentMachine();
+          if (savedMachine && savedMachine.id_maquina === savedSession.id_maquina) {
+            console.log('📖 Máquina da sessão encontrada:', savedMachine.nome);
+            setCurrentMachine(savedMachine);
+            
+            // ✅ Restaurar estado de autenticação baseado na sessão salva
+            // Nota: Não vamos chamar login novamente, apenas restaurar o estado
+            // O backend já tem a sessão ativa, só precisamos navegar para dashboard
+            console.log('🔄 Restaurando autenticação para sessão:', savedSession.id_sessao);
+            // Não precisamos fazer login novamente, apenas indicar que está autenticado
+            // O useAuth vai gerenciar isso através da sessão salva
+          } else {
+            console.log('⚠️ Máquina da sessão não encontrada ou diferente');
+            // Limpar sessão inválida
+            localStorage.removeItem('industrack_active_session');
+          }
+        } else {
+          // ✅ NOVO: Carregar máquina do localStorage (se não houver sessão ativa)
+          const savedMachine = machineStorage.getCurrentMachine();
+          if (savedMachine) {
+            console.log('📖 Máquina carregada do localStorage:', savedMachine.nome);
+            setCurrentMachine(savedMachine);
+          } else {
+            console.log('📋 Nenhuma máquina salva localmente');
+          }
+        }
+      } catch (error) {
+        console.error('❌ Erro na inicialização:', error);
+      } finally {
+        setInitialLoading(false);
       }
-      setInitialLoading(false);
     };
 
     initializeApp();
@@ -83,25 +139,19 @@ function App() {
 
   const checkMachine = async () => {
     try {
-      const deviceId = await getDeviceId();
-      const { data, error } = await supabase
-        .from('device_machine')
-        .select('id_maquina, Maquinas!inner(*)')
-        .eq('device_id', deviceId)
-        .eq('active', true)
-        .single();
-
-      if (error) {
-        const isJWTError = await handleJWTError(error);
-        if (isJWTError) return;
-        throw error;
-      }
-
-      if (data?.Maquinas) {
-        setCurrentMachine(data.Maquinas as unknown as Machine);
+      // ✅ NOVO: Usar localStorage ao invés de Supabase para verificar máquina
+      const savedMachine = machineStorage.getCurrentMachine();
+      if (savedMachine) {
+        console.log('✅ Máquina encontrada no localStorage:', savedMachine.nome);
+        setCurrentMachine(savedMachine);
       } else {
+        console.log('📋 Nenhuma máquina no localStorage, abrindo configurações');
         setShowSettings(true);
       }
+      
+      // ❌ REMOVIDO: Consulta device_machine desnecessária
+      // Mantemos apenas para compatibilidade com modo admin se necessário
+      
     } catch (err) {
       console.error('Error checking machine:', err);
       setShowSettings(true);
@@ -109,13 +159,19 @@ function App() {
   };
 
   const handleMachineSelect = async (machine: Machine) => {
+    // ✅ NOVO: Salvar máquina selecionada no localStorage
+    machineStorage.saveCurrentMachine(machine);
     setCurrentMachine(machine);
     setShowSettings(false);
+    // ✅ NOVO: Limpar estados para permitir novo login
+    setPin('');
+    setSuccess(false);
+    setSearchingMachines(false);
   };
 
   const handleNumberClick = (number: string) => {
     const maxLength = twoOperators ? 8 : 4;
-    if (pin.length < maxLength && !isLoading && !success) {
+    if (pin.length < maxLength && !isLoading && !success && !searchingMachines) {
       setPin(prev => prev + number);
     }
   };
@@ -131,6 +187,39 @@ function App() {
     setPin('');
     setSuccess(false);
     // ✅ NOVO: Error e secondaryOperator agora são gerenciados pelo useAuth
+  };
+
+  // ✅ NOVO: Função para revelar botão escondido (toque triplo no logo)
+  const handleLogoClick = () => {
+    setLogoClickCount(prev => {
+      const newCount = prev + 1;
+      
+      // Resetar contador após 2 segundos
+      setTimeout(() => setLogoClickCount(0), 2000);
+      
+      // Revelar botão após 3 toques
+      if (newCount === 3) {
+        setShowHiddenButton(true);
+        console.log('🔓 Botão de seleção de máquina revelado!');
+        
+        // Esconder botão automaticamente após 10 segundos
+        setTimeout(() => setShowHiddenButton(false), 10000);
+      }
+      
+      return newCount;
+    });
+  };
+
+  // ✅ NOVO: Navegar diretamente para seleção de máquinas
+  const handleGoToMachineSelection = () => {
+    console.log('🔘 Botão clicado - iniciando navegação...');
+    setShowSettings(true);
+    setShowHiddenButton(false);
+    setPin('');
+    setSuccess(false);
+    setSearchingMachines(false);
+    console.log('⚙️ Estados atualizados - navegando para seleção de máquinas...');
+    console.log('📊 showSettings:', true, 'isAuthenticated:', isAuthenticated);
   };
 
   // ✅ NOVA função de login usando API REST
@@ -156,7 +245,7 @@ function App() {
 
           setSuccess(true);
           setTimeout(() => {
-            checkMachine();
+            checkMachine(); // ✅ MANTIDO: Ainda necessário para modo admin
           }, 1000);
           return;
         } catch (adminError) {
@@ -165,19 +254,59 @@ function App() {
         }
       }
 
-      // ✅ Login via API REST 
+      // ✅ NOVO: Garantir que temos ID da máquina antes do login
+      let machineToUse = currentMachine;
+      
+      if (!machineToUse?.id_maquina) {
+        console.log('📋 ID da máquina não disponível. Buscando lista de máquinas...');
+        
+        try {
+          setSearchingMachines(true);
+          const ensuredMachine = await machineStorage.ensureMachineId();
+          if (ensuredMachine) {
+            machineToUse = ensuredMachine;
+            setCurrentMachine(ensuredMachine);
+          } else {
+            // Múltiplas máquinas encontradas - abrir tela de seleção
+            console.log('📋 Múltiplas máquinas encontradas. Abrindo tela de seleção...');
+            setShowSettings(true);
+            setPin(''); // Limpar PIN para que usuário digite novamente após selecionar
+            return; // ✅ SAIR SEM ERRO - não tentar fazer login ainda
+          }
+        } catch (machineError) {
+          console.error('❌ Erro ao buscar máquinas:', machineError);
+          throw new Error('Erro ao buscar lista de máquinas');
+        } finally {
+          setSearchingMachines(false);
+        }
+      }
+
+      // ✅ VALIDAÇÃO FINAL: Garantir que temos ID da máquina válido
+      if (!machineToUse?.id_maquina) {
+        console.error('❌ ID da máquina ainda não disponível após busca');
+        throw new Error('ID da máquina não disponível. Selecione uma máquina nas configurações.');
+      }
+
+      // ✅ Login via API REST com ID da máquina
+      console.log('🔍 Dados para login:', {
+        pin: '****',
+        twoOperators,
+        id_maquina: machineToUse?.id_maquina,
+        machineToUse_exists: !!machineToUse,
+        machine_name: machineToUse?.nome
+      });
+
       const result = await login({
         pin,
         twoOperators,
-        id_maquina: currentMachine?.id_maquina
+        id_maquina: machineToUse?.id_maquina
       });
 
       if (result.success) {
         console.log('✅ Login realizado com sucesso via API REST');
         setSuccess(true);
-        setTimeout(() => {
-          checkMachine();
-        }, 1000);
+        // ✅ REMOVIDO: checkMachine() - máquina já está definida antes do login
+        // A máquina já foi verificada/selecionada antes de chegar aqui
       } else {
         throw new Error(result.error || 'Erro no login');
       }
@@ -252,11 +381,47 @@ function App() {
     );
   }
 
+  // ✅ NOVO: Permitir Settings mesmo sem autenticação (para seleção de máquinas)
+  if (showSettings) {
+    return <Settings 
+      onBack={() => {
+        setShowSettings(false);
+        setPin('');
+        setSuccess(false);
+        setSearchingMachines(false);
+      }} 
+      onMachineSelect={handleMachineSelect} 
+    />;
+  }
+
+  // ✅ NOVO: Verificar se há sessão salva antes de mostrar tela de login
+  const savedSession = checkSavedSession();
+  const hasActiveSession = savedSession !== null;
+
+  // Se houver sessão ativa E máquina selecionada, ir direto para dashboard
+  // ✅ Mas só se não houver erro de autenticação
+  if (hasActiveSession && currentMachine && !showSettings && !error) {
+    // Criar operador fake baseado na sessão salva (para compatibilidade)
+    const restoredOperator = operator || {
+      id_operador: savedSession.id_operador,
+      nome: 'Operador',
+      empresa: 0,
+      cargo: 'Operador',
+      ativo: true,
+      id_empresa: 0
+    };
+
+    return (
+      <MachineSelection 
+        initialMachine={currentMachine} 
+        onShowSettings={() => setShowSettings(true)}
+        secondaryOperator={null}
+        operator={restoredOperator}
+      />
+    );
+  }
+
   if (isAuthenticated) {
-    if (showSettings) {
-      return <Settings onBack={() => setShowSettings(false)} onMachineSelect={handleMachineSelect} />;
-    }
-    
     if (currentMachine) {
       return (
         <MachineSelection 
@@ -273,15 +438,51 @@ function App() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-600 to-blue-900 flex flex-col items-center justify-center p-4">
-      <div className="flex flex-col items-center mb-8 bg-black/20 px-8 py-6 rounded-2xl backdrop-blur-sm">
+      {/* ✅ NOVO: Indicador de modo desenvolvedor */}
+      {showHiddenButton && (
+        <div className="fixed top-4 right-4 bg-orange-600 text-white px-3 py-1 rounded-full text-xs font-semibold animate-pulse">
+          🔧 DEV MODE
+        </div>
+      )}
+      
+      <div className="flex flex-col items-center mb-8 bg-black/20 px-8 py-6 rounded-2xl backdrop-blur-sm relative">
         <img 
           src="https://oixnkjcvkfdimwoikzgl.supabase.co/storage/v1/object/public/Industrack//industrack_versao_dark.svg"
           alt="Industrack Logo"
-          className="h-16 mb-6"
+          className={`h-16 mb-6 cursor-pointer select-none transition-all duration-200 ${
+            logoClickCount > 0 ? 'scale-110 brightness-125' : 'hover:scale-105'
+          }`}
+          onClick={handleLogoClick}
+          title="Clique 3x para revelar opções"
         />
-        <h1 className="text-4xl font-bold text-white tracking-tight">Operador - Mould</h1>
+        <h1 
+          className={`text-4xl font-bold text-white tracking-tight cursor-pointer select-none transition-all duration-200 ${
+            logoClickCount > 0 ? 'scale-105 text-orange-200' : ''
+          }`}
+          onClick={handleLogoClick}
+        >
+          Operador - Mould
+        </h1>
+        
+        {/* ✅ NOVO: Indicador visual de toques */}
+        {logoClickCount > 0 && (
+          <div className="flex gap-1 mt-2 mb-1">
+            {[1, 2, 3].map(i => (
+              <div
+                key={i}
+                className={`w-2 h-2 rounded-full transition-all duration-300 ${
+                  i <= logoClickCount ? 'bg-orange-400' : 'bg-gray-600'
+                }`}
+              />
+            ))}
+          </div>
+        )}
+        
         <p className="text-blue-200 text-center mt-2">
-          {twoOperators ? 'Login com 2 Operadores' : 'Login com 1 Operador'}
+          {logoClickCount > 0 && logoClickCount < 3 
+            ? `Clique mais ${3 - logoClickCount}x no logo` 
+            : twoOperators ? 'Login com 2 Operadores' : 'Login com 1 Operador'
+          }
         </p>
         
         {/* Toggle Switch */}
@@ -345,10 +546,10 @@ function App() {
           ))}
         </div>
 
-        {isLoading && (
+        {(isLoading || searchingMachines) && (
           <div className="mb-6 text-white flex items-center gap-2">
             <Loader2 className="w-5 h-5 animate-spin" />
-            <span>Verificando...</span>
+            <span>{searchingMachines ? 'Buscando máquinas...' : 'Verificando...'}</span>
           </div>
         )}
 
@@ -365,13 +566,24 @@ function App() {
           </div>
         )}
 
+        {/* ✅ NOVO: Botão escondido para seleção de máquinas */}
+        {showHiddenButton && (
+          <button
+            onClick={handleGoToMachineSelection}
+            className="mb-4 px-6 py-3 bg-orange-600 hover:bg-orange-700 text-white rounded-lg font-semibold 
+                     transition-all duration-200 animate-pulse shadow-lg border-2 border-orange-400"
+          >
+            ⚙️ Selecionar Máquina
+          </button>
+        )}
+
         <NumPad
           onNumberClick={handleNumberClick}
           onDelete={handleDelete}
           className={`mt-6 ${
             twoOperators ? 'scale-110' : 'scale-105'
           }`}
-          disabled={isLoading || success}
+          disabled={isLoading || success || searchingMachines}
         />
       </div>
     </div>

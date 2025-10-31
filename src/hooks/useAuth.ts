@@ -40,11 +40,33 @@ export function useAuth() {
 
       console.log('🔐 Iniciando login via API REST:', { primaryPin, secondaryPin, twoOperators });
 
+      // Respeitar sessão ativa existente: se já houver sessão salva para a mesma máquina,
+      // não enviar id_maquina no login para evitar criação/reset de sessão no backend
+      let savedSession: { id_sessao?: number; id_maquina?: number; id_operador?: number; timestamp?: number } | null = null;
+      try {
+        const savedStr = localStorage.getItem('industrack_active_session');
+        savedSession = savedStr ? JSON.parse(savedStr) : null;
+      } catch {}
+
+      const shouldOmitMachineId = Boolean(
+        savedSession &&
+        typeof id_maquina === 'number' &&
+        savedSession.id_maquina === id_maquina
+      );
+
       // Login principal
       const loginRequest: LoginRequest = {
         pin: parseInt(primaryPin),
-        id_maquina
+        ...(shouldOmitMachineId ? {} : (typeof id_maquina === 'number' ? { id_maquina } : {}))
       };
+
+      console.log('📤 Enviando request de login:', {
+        pin: '****',
+        id_maquina,
+        id_maquina_type: typeof id_maquina,
+        id_maquina_undefined: id_maquina === undefined,
+        id_maquina_null: id_maquina === null
+      });
 
       const response = await apiService.login(loginRequest);
 
@@ -63,7 +85,7 @@ export function useAuth() {
           
           const secondaryRequest: LoginRequest = {
             pin: parseInt(secondaryPin),
-            id_maquina
+            ...(shouldOmitMachineId ? {} : (typeof id_maquina === 'number' ? { id_maquina } : {}))
           };
 
           const secondaryResponse = await apiService.login(secondaryRequest);
@@ -80,6 +102,34 @@ export function useAuth() {
         } catch (secondaryError) {
           console.warn('⚠️ Erro no login do segundo operador:', secondaryError);
           // Continua mesmo se o segundo operador falhar
+        }
+      }
+
+      // ✅ Persistência da sessão: se backend retornar sessão
+      if (response.data.sessao?.id_sessao) {
+        const newSession = {
+          id_sessao: response.data.sessao.id_sessao,
+          id_maquina: response.data.sessao.id_maquina,
+          id_operador: response.data.sessao.id_operador,
+          timestamp: Date.now()
+        };
+
+        // Se já existe sessão salva da mesma máquina, apenas renova timestamp
+        if (savedSession && savedSession.id_maquina === newSession.id_maquina) {
+          const merged = { ...savedSession, timestamp: Date.now() };
+          localStorage.setItem('industrack_active_session', JSON.stringify(merged));
+          console.log('🕒 Sessão existente encontrada - timestamp renovado');
+        } else if (!savedSession) {
+          localStorage.setItem('industrack_active_session', JSON.stringify(newSession));
+          console.log('💾 Sessão salva no localStorage:', newSession.id_sessao);
+        } else {
+          // Existe sessão de outra máquina: sobrescrever apenas se id_maquina do request foi enviado
+          if (!shouldOmitMachineId) {
+            localStorage.setItem('industrack_active_session', JSON.stringify(newSession));
+            console.log('🔄 Sessão substituída no localStorage (máquina diferente)');
+          } else {
+            console.log('⚠️ Mantendo sessão existente (máquina diferente, mas login sem id_maquina)');
+          }
         }
       }
 
@@ -125,13 +175,45 @@ export function useAuth() {
       error: ''
     });
     
-    // Limpar dados da sessão
+    // ✅ NOVO: Limpar dados da sessão (novo e antigo)
     localStorage.removeItem('industrack_session');
+    localStorage.removeItem('industrack_active_session');
+  };
+
+  // ✅ NOVO: Verificar se há sessão salva e restaurar autenticação
+  const checkSavedSession = () => {
+    try {
+      const savedSessionStr = localStorage.getItem('industrack_active_session');
+      if (!savedSessionStr) {
+        console.log('📋 Nenhuma sessão salva encontrada');
+        return null;
+      }
+
+      const savedSession = JSON.parse(savedSessionStr);
+      console.log('🔍 Sessão salva encontrada:', savedSession);
+
+      // Verificar se a sessão não está muito antiga (mais de 24 horas sem uso)
+      const sessionAge = Date.now() - (savedSession.timestamp || 0);
+      const maxAge = 24 * 60 * 60 * 1000; // 24 horas em ms
+      
+      if (sessionAge > maxAge) {
+        console.log('⏰ Sessão salva expirada, removendo...');
+        localStorage.removeItem('industrack_active_session');
+        return null;
+      }
+
+      return savedSession;
+    } catch (error) {
+      console.error('❌ Erro ao verificar sessão salva:', error);
+      localStorage.removeItem('industrack_active_session');
+      return null;
+    }
   };
 
   return {
     ...authState,
     login,
-    logout
+    logout,
+    checkSavedSession
   };
 }

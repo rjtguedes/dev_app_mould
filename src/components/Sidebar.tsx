@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
-import { endSession, toBrasiliaTime, getBrasiliaTimestamp } from '../lib/session';
+import { apiService } from '../services/apiService';
 import type { Session } from '../types/session';
 import { 
   Settings, 
@@ -39,6 +39,10 @@ interface SidebarProps {
   // ✅ NOVOS (WS)
   wsData?: any | null;
   onWsEndSession?: () => Promise<void>;
+  // ✅ NOVO: Parada forçada
+  onForcedStop?: () => void;
+  // ✅ NOVO: Justificar parada (ativa ou última)
+  onJustifyStop?: () => void;
 }
 
 interface MachineStats {
@@ -80,7 +84,9 @@ export function Sidebar({
   onForcedResume,
   currentStopJustified, // ✅ NOVO
   wsData,
-  onWsEndSession
+  onWsEndSession,
+  onForcedStop, // ✅ NOVO
+  onJustifyStop
 }: SidebarProps) {
   const [isCollapsed, setIsCollapsed] = React.useState(false);
   const [showLogoutModal, setShowLogoutModal] = React.useState(false);
@@ -261,181 +267,21 @@ export function Sidebar({
     
     if (currentSessionId) {
       try {
-        console.log('Encerrando sessão via Sidebar, sessionId:', currentSessionId);
-        
-        // 1. Enviar comando WS para finalizar sessão (se disponível)
-        if (onWsEndSession) {
-          try {
-            console.log('Enviando comando WebSocket para finalizar sessão...');
-            await onWsEndSession();
-          } catch (wsErr) {
-            console.warn('Falha ao finalizar sessão via WS (seguindo com Supabase):', wsErr);
-          }
+        console.log('Encerrando sessão via API REST, sessionId:', currentSessionId);
+        const response = await apiService.finalizarSessao({
+          id_maquina: machineId,
+          ...(currentSessionId ? { id_sessao: currentSessionId } : {})
+        });
+
+        if (!response.success) {
+          throw new Error(response.error || 'Erro ao finalizar sessão');
         }
 
-        // 2. Encerrar paradas pendentes
-        console.log('2. Verificando e encerrando paradas pendentes...');
-        const { data: pendingStops, error: pendingStopsError } = await supabase
-          .from('paradas_redis')
-          .select('id, inicio_unix_segundos')
-          .eq('id_sessao', currentSessionId)
-          .is('fim_unix_segundos', null);
+        console.log('✅ Sessão finalizada com sucesso via API');
 
-        if (pendingStopsError) {
-          console.error('Erro ao buscar paradas pendentes:', pendingStopsError);
-        } else if (pendingStops && pendingStops.length > 0) {
-          console.log('Encerrando paradas pendentes:', pendingStops.length);
-          
-          const now = Math.floor(Date.now() / 1000);
-          for (const stop of pendingStops) {
-            const { error: updateError } = await supabase
-              .from('paradas_redis')
-              .update({ fim_unix_segundos: now })
-              .eq('id', stop.id);
-            
-            if (updateError) {
-              console.error('Erro ao encerrar parada:', stop.id, updateError);
-            } else {
-              console.log('Parada encerrada:', stop.id);
-            }
-          }
-        } else {
-          console.log('Nenhuma parada pendente encontrada');
-        }
-
-        // 3. Encerrar a sessão no Supabase
-        console.log('3. Encerrando a sessão...');
-        await endSession(currentSessionId);
-        console.log('Sessão encerrada com sucesso');
-
-        // 3. Criar registro na tabela OEE
-        if (sessionStats && machineId) {
-          console.log('3. Criando registro OEE...');
-          
-          // Buscar dados da sessão para o registro OEE
-          const { data: sessionData, error: sessionError } = await supabase
-            .from('sessoes')
-            .select('inicio, fim, turno')
-            .eq('id', currentSessionId)
-            .single();
-
-          if (sessionError) {
-            console.error('Erro ao buscar dados da sessão para OEE:', sessionError);
-          } else {
-            const sessionEnd = sessionData.fim || Math.floor(Date.now() / 1000);
-            const sessionStart = sessionData.inicio;
-            const duration = sessionEnd - sessionStart;
-            
-            // Calcular minutos disponível e parada
-            const minutosDisponivel = Math.floor((duration - (sessionStats.oee.disponibilidade / 100 * duration)) / 60);
-            const minutosParada = Math.floor((sessionStats.oee.disponibilidade / 100 * duration) / 60);
-
-            const oeeData = {
-              id_maquina: machineId,
-              id_turno: sessionData.turno,
-              inicio_turno: toBrasiliaTime(sessionStart),
-              fim_turno: toBrasiliaTime(sessionEnd),
-              disponibilidade: sessionStats.oee.disponibilidade,
-              desempenho: sessionStats.oee.performance,
-              qualidade: sessionStats.oee.qualidade,
-              pecas_produzidas: sessionStats.quantidadeProduzida,
-              pecas_refugadas: sessionStats.quantidadeRejeito,
-              minutos_disponivel: minutosDisponivel,
-              minutos_parada: minutosParada,
-              oee: sessionStats.oee.oee,
-              data: new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' }).split('/').reverse().join('-'),
-              timestamp_epoch_inicio_turno: sessionStart,
-              tempo_operacao: Math.floor(duration / 60),
-              sessao: currentSessionId
-            };
-
-            const { data: oeeRecord, error: oeeError } = await supabase
-              .from('OEE')
-              .insert(oeeData)
-              .select()
-              .single();
-
-            if (oeeError) {
-              console.error('Erro ao criar registro OEE:', oeeError);
-            } else {
-              console.log('Registro OEE criado com sucesso:', oeeRecord.id);
-            }
-          }
-        }
-
-        // 4. Zerar estatísticas da máquina principal
-        console.log('4. Zerando estatísticas da máquina principal...');
-        const { error: resetMainMachineError } = await supabase
-          .from('machine_stats')
-          .update({
-            produzido: 0,
-            rejeitos: 0,
-            disponibilidade: 0,
-            desempenho: 0,
-            qualidade: 0,
-            oee: 0,
-            minutos_disponivel: 0,
-            minutos_parada: 0,
-            producao_teorica: 0,
-            velocidade: 0,
-            ultimo_sinal: null,
-            id_parada_atual: null,
-            ligada: false
-          })
-          .eq('id_maquina', machineId);
-
-        if (resetMainMachineError) {
-          console.error('Erro ao zerar estatísticas da máquina principal:', resetMainMachineError);
-        } else {
-          console.log('Estatísticas da máquina principal zeradas com sucesso');
-        }
-
-        // 5. Buscar e zerar estatísticas das máquinas filhas
-        console.log('5. Buscando e zerando estatísticas das máquinas filhas...');
-        const { data: childMachines, error: childMachinesError } = await supabase
-          .from('Maquinas')
-          .select('id_maquina')
-          .eq('maquina_pai', machineId);
-
-        if (childMachinesError) {
-          console.error('Erro ao buscar máquinas filhas:', childMachinesError);
-        } else if (childMachines && childMachines.length > 0) {
-          console.log(`Encontradas ${childMachines.length} máquinas filhas`);
-          
-          for (const childMachine of childMachines) {
-            const { error: resetChildError } = await supabase
-              .from('machine_stats')
-              .update({
-                produzido: 0,
-                rejeitos: 0,
-                disponibilidade: 0,
-                desempenho: 0,
-                qualidade: 0,
-                oee: 0,
-                minutos_disponivel: 0,
-                minutos_parada: 0,
-                producao_teorica: 0,
-                velocidade: 0,
-                ultimo_sinal: null,
-                id_parada_atual: null,
-                ligada: false
-              })
-              .eq('id_maquina', childMachine.id_maquina);
-
-            if (resetChildError) {
-              console.error(`Erro ao zerar estatísticas da máquina filha ${childMachine.id_maquina}:`, resetChildError);
-            } else {
-              console.log(`Estatísticas da máquina filha ${childMachine.id_maquina} zeradas com sucesso`);
-            }
-          }
-        } else {
-          console.log('Nenhuma máquina filha encontrada');
-        }
-
-        // 6. Registro na tabela encerramento_sessao agora é criado automaticamente pela função endSession
-        console.log('6. Registro de encerramento será criado automaticamente pela função endSession');
-
-        console.log('=== FLUXO DE ENCERRAMENTO CONCLUÍDO COM SUCESSO ===');
+        // Limpar sessão salva do localStorage
+        localStorage.removeItem('industrack_active_session');
+        console.log('🧹 Sessão ativa removida do localStorage');
         
       } catch (err) {
         console.error('Erro durante o encerramento da sessão:', err);
@@ -582,7 +428,9 @@ export function Sidebar({
             onClick={onShowProductionCommands}
             className={`
               w-full flex items-center gap-3 px-3 py-2.5 rounded-lg
-              hover:bg-white/10 transition-colors text-white
+              bg-indigo-600 hover:bg-indigo-700 text-white transition-colors
+              border border-indigo-400/40 shadow-lg shadow-indigo-900/30
+              focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300
               ${isCollapsed ? 'justify-center' : 'justify-start'}
             `}
           >
@@ -592,20 +440,23 @@ export function Sidebar({
             </span>
           </button>
 
-          {/* Botão de Parada Manual / Retomada */}
+          {/* Botão de Parada Forçada / Retomada */}
           {!isMachineStopped ? (
             <button
-              onClick={onShowStopReasonModal}
+              onClick={onForcedStop || onShowStopReasonModal}
+              disabled={!onForcedStop && !onShowStopReasonModal}
               className={`
                 w-full flex items-center gap-3 px-3 py-2.5 rounded-lg
-                hover:bg-red-500/20 transition-colors text-white
-                border border-red-500/30
+                bg-red-600 hover:bg-red-700 text-white transition-colors
+                border border-red-400/50 shadow-lg shadow-red-900/30
+                disabled:opacity-50 disabled:cursor-not-allowed
+                focus:outline-none focus-visible:ring-2 focus-visible:ring-red-300
                 ${isCollapsed ? 'justify-center' : 'justify-start'}
               `}
             >
               <Square className="w-7 h-7" />
               <span className={`transition-opacity duration-300 ${isCollapsed ? 'opacity-0 w-0' : 'opacity-100'}`}>
-                Parada Manual
+                Parada Forçada
               </span>
             </button>
           ) : (
@@ -613,8 +464,9 @@ export function Sidebar({
               onClick={onForcedResume}
               className={`
                 w-full flex items-center gap-3 px-3 py-2.5 rounded-lg
-                hover:bg-green-500/20 transition-colors text-white
-                border border-green-500/30
+                bg-green-600 hover:bg-green-700 text-white transition-colors
+                border border-green-400/50 shadow-lg shadow-green-900/30
+                focus:outline-none focus-visible:ring-2 focus-visible:ring-green-300
                 ${isCollapsed ? 'justify-center' : 'justify-start'}
               `}
             >
@@ -624,6 +476,71 @@ export function Sidebar({
               </span>
             </button>
           )}
+
+          {/* ✅ Controle de Justificativa de Parada (sempre mirando a última) */}
+          {(() => {
+            const contexto: any = wsData?.contexto || null;
+            const latestParada = contexto?.parada_ativa || contexto?.ultima_parada || null;
+            const hasLatestParada = !!latestParada;
+            const isLatestJustified = !!currentStopJustified || (justifiedStopReason && justifiedStopReason !== 'Parada não justificada');
+
+            if (hasLatestParada && !isLatestJustified) {
+              // Mostrar botão para justificar (mesmo se a máquina estiver funcionando)
+              return (
+                <button
+                  onClick={onJustifyStop}
+                  disabled={!onJustifyStop}
+                  className={`
+                    w-full flex items-center gap-3 px-3 py-2.5 rounded-lg
+                    bg-amber-600 hover:bg-amber-700 text-white transition-colors
+                    border border-amber-400/50 shadow-lg shadow-amber-900/30
+                    disabled:opacity-50 disabled:cursor-not-allowed
+                    focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-300
+                    ${isCollapsed ? 'justify-center' : 'justify-start'}
+                  `}
+                >
+                  <PauseCircle className="w-7 h-7" />
+                  <span className={`transition-opacity duration-300 ${isCollapsed ? 'opacity-0 w-0' : 'opacity-100'}`}>
+                    {contexto?.parada_ativa ? 'Justificar Parada' : 'Justificar Última Parada'}
+                  </span>
+                </button>
+              );
+            }
+
+            if (hasLatestParada && isLatestJustified) {
+              // Última parada já justificada -> mostrar estado "Justificada"
+              return (
+                <div
+                  className={`
+                    w-full flex items-center gap-3 px-3 py-2.5 rounded-lg
+                    bg-green-600/20 text-green-300 border border-green-400/40
+                    ${isCollapsed ? 'justify-center' : 'justify-start'}
+                  `}
+                >
+                  <CheckCircle2 className="w-7 h-7" />
+                  <span className={`transition-opacity duration-300 ${isCollapsed ? 'opacity-0 w-0' : 'opacity-100'}`}>
+                    Justificada
+                  </span>
+                </div>
+              );
+            }
+
+            // Sem paradas para justificar
+            return (
+              <div
+                className={`
+                  w-full flex items-center gap-3 px-3 py-2.5 rounded-lg
+                  bg-white/5 text-white/70 border border-white/10
+                  ${isCollapsed ? 'justify-center' : 'justify-start'}
+                `}
+              >
+                <PauseCircle className="w-7 h-7" />
+                <span className={`transition-opacity duration-300 ${isCollapsed ? 'opacity-0 w-0' : 'opacity-100'}`}>
+                  sem paradas para justificar
+                </span>
+              </div>
+            );
+          })()}
 
           {/* Botão para parada em andamento - só mostrar quando relevante */}
           {(pendingStops > 0 || justifiedStopReason === 'Parada não justificada') && (
