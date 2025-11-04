@@ -10,7 +10,6 @@ import { DiagnosticoConexao } from './pages/DiagnosticoConexao';
 import { supabase, handleJWTError } from './lib/supabase';
 import { decryptCredentials } from './lib/crypto';
 import { useWakeLock } from './hooks/useWakeLock';
-import { getDeviceId } from './lib/device';
 import { useAuth } from './hooks/useAuth';
 import { machineStorage } from './lib/machineStorage';
 import type { Machine } from './types/machine';

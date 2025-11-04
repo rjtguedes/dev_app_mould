@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { ArrowLeft, Box, AlertCircle, Power, Gauge } from 'lucide-react';
 import { machineStorage } from '../lib/machineStorage';
-import { getDeviceId } from '../lib/device';
 import type { Machine } from '../types/machine';
 import { supabase } from '../lib/supabase';
 
@@ -21,7 +20,6 @@ export function Settings({ onBack, onMachineSelect }: SettingsProps) {
   const [machines, setMachines] = useState<Machine[]>([]);
   const [loadingMachines, setLoadingMachines] = useState(true);
   const [machinesError, setMachinesError] = useState<string | null>(null);
-  const [deviceId, setDeviceId] = React.useState<string>('');
   const [parameters, setParameters] = useState<Parameter[]>([]);
   const [selectedMachine, setSelectedMachine] = useState<Machine | null>(null);
   const [loading, setLoading] = useState(false);
@@ -34,10 +32,6 @@ export function Settings({ onBack, onMachineSelect }: SettingsProps) {
   React.useEffect(() => {
     async function loadInitialData() {
       try {
-        // Carregar Device ID
-        const id = await getDeviceId();
-        setDeviceId(id);
-        
         // ✅ NOVO: Buscar máquinas da API REST
         console.log('📋 Buscando máquinas da API REST...');
         setLoadingMachines(true);
