@@ -306,6 +306,15 @@ class APIService {
     });
   }
 
+  // ==================== RETOMADA DE PRODUÇÃO (QUANDO BACKEND IMPLEMENTAR) ====================
+  
+  async retomarTalao(request: { id_maquina: number; id_talao: number; estacao_numero: number }): Promise<APIResponse> {
+    return this.request('/api/producao/retomar-talao', {
+      method: 'POST',
+      body: JSON.stringify(request)
+    });
+  }
+
   // ==================== CONTEXTO ====================
 
   async consultarContexto(machineId: number): Promise<APIResponse> {
@@ -326,12 +335,11 @@ class APIService {
     });
   }
 
-  async justificarParada(idParada: number, idMotivo: number, observacoes?: string): Promise<APIResponse> {
+  async justificarParada(idParada: number, idMotivo: number): Promise<APIResponse> {
     return this.request(`/api/parada/${idParada}/justificar`, {
       method: 'POST',
       body: JSON.stringify({
-        id_motivo: idMotivo,
-        ...(observacoes ? { observacoes } : {})
+        id_motivo: idMotivo
       })
     });
   }

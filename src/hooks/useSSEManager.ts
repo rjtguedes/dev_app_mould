@@ -220,12 +220,28 @@ export function useSSEManager(options: SSEManagerOptions) {
       setChildMachinesData(newChildMachinesData);
       
       // Definir dados da máquina principal (nova estrutura)
+      // ✅ Detectar parada forçada
+      let paradaAtivaMain = contextData.parada_ativa ?? null;
+      const paradaForcadaMain = contextData.parada_forcada;
+      let statusMain = contextData.maquina?.status || true;
+      
+      if (paradaForcadaMain && paradaForcadaMain.ativa === true) {
+        console.log('🛑 SSE Manager: Parada forçada detectada na máquina principal (multipostos):', paradaForcadaMain);
+        paradaAtivaMain = {
+          id: paradaForcadaMain.id_parada,
+          inicio: paradaForcadaMain.inicio,
+          motivo_id: paradaForcadaMain.id_motivo,
+          bloqueio_sinais: paradaForcadaMain.bloqueio_sinais || false
+        };
+        statusMain = false; // Parada forçada = status false
+      }
+      
       const mainMachineData = {
         contexto: {
           id: contextData.maquina?.id_maquina,
           nome: contextData.maquina?.nome,
           velocidade: contextData.maquina?.velocidade || 0,
-          status: contextData.maquina?.status || true,
+          status: statusMain,
           sessao_operador: contextData.sessao_ativa || {
             sinais: 0,
             sinais_validos: 0,
@@ -233,7 +249,8 @@ export function useSSEManager(options: SSEManagerOptions) {
           },
           producao_mapa: mapProducaoAtiva(contextData.producao_ativa),
           producao_turno: contextData.producao_turno,
-          parada_ativa: contextData.parada_ativa
+          parada_ativa: paradaAtivaMain,
+          parada_forcada: paradaForcadaMain ?? null
         }
       };
       
@@ -342,13 +359,33 @@ export function useSSEManager(options: SSEManagerOptions) {
       // ✅ Normalizar estrutura do backend (nova: maquina/sessao_ativa/producao_ativa)
       const maquina = contextData.maquina || {};
 
+      // ✅ Detectar parada forçada e converter para parada_ativa se necessário
+      let paradaAtiva = contextData.parada_ativa ?? null;
+      const paradaForcada = contextData.parada_forcada;
+      let statusReal = maquina.status ?? contextData.status ?? true;
+      
+      // Se tem parada forçada ativa, usar ela como parada_ativa
+      if (paradaForcada && paradaForcada.ativa === true) {
+        console.log('🛑 SSE Manager: Parada forçada detectada no contexto inicial:', paradaForcada);
+        paradaAtiva = {
+          id: paradaForcada.id_parada,
+          inicio: paradaForcada.inicio,
+          motivo_id: paradaForcada.id_motivo,
+          bloqueio_sinais: paradaForcada.bloqueio_sinais || false
+        };
+        // Se tem parada forçada ativa, status deve ser false (parada)
+        statusReal = false;
+        console.log('🛑 SSE Manager: Status ajustado para false devido a parada forçada');
+      }
+
       const dadosParaExibir = {
         contexto: {
           id_maquina: maquina.id_maquina ?? maquina.id ?? contextData.id_maquina ?? contextData.id,
           nome: maquina.nome ?? contextData.nome,
           velocidade: maquina.velocidade ?? contextData.velocidade ?? 0,
-          status: maquina.status ?? contextData.status ?? true,
-          parada_ativa: contextData.parada_ativa ?? null,
+          status: statusReal,
+          parada_ativa: paradaAtiva,
+          parada_forcada: paradaForcada ?? null, // Manter também o original
           ultima_parada: (contextData as any).ultima_parada ?? null,
           // ✅ Mapear campos novos para os esperados pela UI
           sessao_operador: contextData.sessao_ativa ?? contextData.sessao_operador ?? null,
@@ -1188,6 +1225,30 @@ export function useSSEManager(options: SSEManagerOptions) {
     
     if (!response.success) {
       setError(response.error || 'Erro ao forçar parada');
+    } else if (response.data) {
+      // ✅ Atualizar estado local com dados da parada forçada
+      try {
+        console.log('🛑 Aplicando atualização local - parada forçada:', response.data);
+        setMachineData(prev => {
+          if (!prev) return prev;
+          
+          return {
+            ...prev,
+            contexto: {
+              ...prev.contexto,
+              status: false, // Máquina parada
+              parada_ativa: {
+                id: response.data.id_parada,
+                inicio: response.data.inicio,
+                motivo_id: response.data.id_motivo,
+                bloqueio_sinais: response.data.bloqueio_sinais || false
+              }
+            }
+          };
+        });
+      } catch (e) {
+        console.warn('⚠️ Falha ao aplicar atualização local de parada forçada:', e);
+      }
     }
     
     return response;
@@ -1201,6 +1262,25 @@ export function useSSEManager(options: SSEManagerOptions) {
     
     if (!response.success) {
       setError(response.error || 'Erro ao retomar parada');
+    } else {
+      // ✅ Atualizar estado local - remover parada ativa
+      try {
+        console.log('▶️ Aplicando atualização local - parada retomada');
+        setMachineData(prev => {
+          if (!prev) return prev;
+          
+          return {
+            ...prev,
+            contexto: {
+              ...prev.contexto,
+              status: true, // Máquina em produção
+              parada_ativa: null // Remove parada ativa
+            }
+          };
+        });
+      } catch (e) {
+        console.warn('⚠️ Falha ao aplicar atualização local de retomada:', e);
+      }
     }
     
     return response;

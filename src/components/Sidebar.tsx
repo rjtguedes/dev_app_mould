@@ -14,7 +14,8 @@ import {
   X,
   Activity,
   Square,
-  Play
+  Play,
+  CheckCircle2
 } from 'lucide-react';
 
 interface SidebarProps {

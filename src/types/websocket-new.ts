@@ -199,24 +199,65 @@ export interface ShiftProduction {
   tempo_valido_segundos: number;
 }
 
+// ==================== TALÃO ESTAÇÃO ====================
+// Representa um talão dentro de producao_mapa
+export interface TalaoProducao {
+  id_talao: number;
+  estacao_numero: number;
+  quantidade: number;
+  tempo_ciclo_segundos: number;
+  // Campos opcionais para controle de produção parcial
+  quantidade_produzida?: number;
+  rejeitos?: number;
+  saldo_pendente?: number;
+  concluida_total?: boolean;
+  concluida_parcial?: boolean;
+  pode_retomar?: boolean;
+  iniciada?: boolean;
+  inicio_unix?: number | null;
+  fim_unix?: number | null;
+}
+
+// ==================== PRODUÇÃO MAPA ====================
+// Estrutura REAL retornada pelo backend via SSE
 export interface ProductionMap {
+  // IDs de identificação
   id_mapa: number;
-  id_item_mapa: number;
-  id_produto: number;
-  id_cor: number;
-  id_matriz: number;
+  id_producao_talao_mapa?: number;
+  id_talao_estacao?: number;
+  
+  // IDs de produto/matriz/cor (podem ser null)
+  id_produto: number | null;
+  id_cor: number | null;
+  id_matriz: number | null;
+  
+  // Descrições textuais
+  produto_referencia: string | null;
+  cor_descricao: string | null;
+  
+  // Quantidades e contadores
+  quantidade_programada: number;
   qt_produzir: number;
+  saldo_a_produzir: number;
   sinais: number;
   rejeitos: number;
   sinais_validos: number;
-  saldo_a_produzir: number;
+  
+  // Tempos
   inicio: number;
-  sessoes: number[];
+  tempo_produto: number; // Tempo de ciclo do produto
+  tempo_estimado: number; // Tempo estimado total de produção
   tempo_decorrido_segundos: number;
   tempo_paradas_segundos: number;
   tempo_paradas_nao_conta_oee: number;
   tempo_paradas_validas: number;
   tempo_valido_segundos: number;
+  
+  // Array de talões/estações
+  taloes: TalaoProducao[];
+  
+  // Sessões relacionadas (opcional)
+  sessoes?: number[];
 }
 
 export interface MachineDataNew {

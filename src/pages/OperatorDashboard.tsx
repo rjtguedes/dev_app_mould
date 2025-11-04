@@ -492,11 +492,19 @@ export function OperatorDashboard({
 
       if (response.success) {
         console.log('✅ Parada forçada iniciada com sucesso');
+        console.log('📊 Dados da parada:', response.data);
         playSuccess();
         setShowJustifyModal(false);
         setIsManualStop(false);
-        // A atualização virá via SSE
-                } else {
+        
+        // ✅ Forçar atualização do contexto para garantir sincronização
+        try {
+          await consultarContexto();
+          console.log('🔄 Contexto atualizado após parada forçada');
+        } catch (e) {
+          console.warn('⚠️ Erro ao atualizar contexto:', e);
+        }
+      } else {
         throw new Error(response.error || 'Erro ao forçar parada');
       }
     } catch (error: any) {
@@ -554,6 +562,14 @@ export function OperatorDashboard({
             if (response.success) {
               console.log('✅ Retomada forçada concluída');
               playSuccess();
+              
+              // ✅ Forçar atualização do contexto para garantir sincronização
+              try {
+                await consultarContexto();
+                console.log('🔄 Contexto atualizado após retomar parada');
+              } catch (e) {
+                console.warn('⚠️ Erro ao atualizar contexto:', e);
+              }
             } else {
               console.error('❌ Erro ao retomar parada forçada:', response.error);
               const errMsg = (response.error || '').toString();

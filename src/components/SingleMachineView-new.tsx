@@ -152,29 +152,95 @@ export function SingleMachineViewNew({
           <div className="flex-1">
             <h3 className="text-3xl font-black text-white tracking-tight">{nome}</h3>
             <p className="text-white/60 text-sm mt-1">Estação #{id} | Velocidade: {velocidade} pcs/h</p>
-            {/* Informações da Produção Ativa */}
+            {/* Informações da Produção Ativa - MELHORADAS */}
             {(producao_mapa as any) && (
-              <div className="mt-3 flex items-center gap-3 flex-wrap">
-                {(() => {
-                  const mapa: any = producao_mapa as any;
-                  const refDisplay = mapa.referencia || mapa.codmapa || mapa.produto_referencia || null;
-                  return refDisplay ? (
-                    <span className="inline-flex items-center gap-1.5 bg-cyan-500/20 px-3 py-1.5 rounded-lg border border-cyan-400/40">
-                      <span className="text-cyan-200 font-bold text-xs">Ref:</span>
-                      <span className="text-cyan-100 font-semibold">{refDisplay}</span>
-                    </span>
-                  ) : null;
-                })()}
-                {(() => {
-                  const mapa: any = producao_mapa as any;
-                  const corDesc = mapa.cor_descricao || null;
-                  return corDesc ? (
-                    <span className="inline-flex items-center gap-1.5 bg-purple-500/20 px-3 py-1.5 rounded-lg border border-purple-400/40">
-                      <span className="text-purple-200 font-bold text-xs">Cor:</span>
-                      <span className="text-purple-100 font-semibold">{corDesc}</span>
-                    </span>
-                  ) : null;
-                })()}
+              <div className="mt-4 space-y-2">
+                {/* Linha 1: Produto, TAMANHO e Cor */}
+                <div className="flex items-center gap-3 flex-wrap">
+                  {(() => {
+                    const mapa: any = producao_mapa as any;
+                    const refDisplay = mapa.referencia || mapa.codmapa || mapa.produto_referencia || null;
+                    return refDisplay ? (
+                      <span className="inline-flex items-center gap-2 bg-gradient-to-r from-orange-500/30 to-amber-500/30 px-4 py-2 rounded-lg border-2 border-orange-400/50 shadow-lg">
+                        <span className="text-orange-200 font-bold text-sm">📦 Produto:</span>
+                        <span className="text-orange-50 font-bold text-base">{refDisplay}</span>
+                      </span>
+                    ) : null;
+                  })()}
+                  
+                  {/* TAMANHO - GIGANTE E DESTAQUE */}
+                  {(() => {
+                    const mapa: any = producao_mapa as any;
+                    const taloes = mapa.taloes || [];
+                    const tamanhos = [...new Set(taloes.map((t: any) => t.talao_tamanho).filter(Boolean))];
+                    return tamanhos.length > 0 ? (
+                      <span className="inline-flex items-center gap-2 bg-gradient-to-br from-indigo-600 to-purple-700 px-6 py-3 rounded-xl border-4 border-white/30 shadow-2xl">
+                        <span className="text-white text-sm font-bold uppercase">Tamanho</span>
+                        <span className="text-white text-3xl font-black tracking-wider">{tamanhos.join(', ')}</span>
+                      </span>
+                    ) : null;
+                  })()}
+                  
+                  {(() => {
+                    const mapa: any = producao_mapa as any;
+                    const corDesc = mapa.cor_descricao || null;
+                    return corDesc ? (
+                      <span className="inline-flex items-center gap-2 bg-gradient-to-r from-pink-500/30 to-rose-500/30 px-4 py-2 rounded-lg border-2 border-pink-400/50 shadow-lg">
+                        <span className="text-pink-200 font-bold text-sm">🎨 Cor:</span>
+                        <span className="text-pink-50 font-bold text-base">{corDesc}</span>
+                      </span>
+                    ) : null;
+                  })()}
+                </div>
+                
+                {/* Linha 2: Tempo de Ciclo, Tempo Total e Matriz */}
+                <div className="flex items-center gap-3 flex-wrap">
+                  {(() => {
+                    const mapa: any = producao_mapa as any;
+                    const tempoCiclo = mapa.tempo_produto || mapa.tempo_ciclo_segundos || null;
+                    return tempoCiclo ? (
+                      <span className="inline-flex items-center gap-2 bg-blue-500/20 px-4 py-2 rounded-lg border border-blue-400/40">
+                        <span className="text-blue-200 font-bold text-xs">⏱️ Ciclo:</span>
+                        <span className="text-blue-100 font-bold text-sm">{tempoCiclo}s</span>
+                      </span>
+                    ) : null;
+                  })()}
+                  
+                  {(() => {
+                    const mapa: any = producao_mapa as any;
+                    const tempoEstimado = mapa.tempo_estimado || null;
+                    return tempoEstimado ? (
+                      <span className="inline-flex items-center gap-2 bg-emerald-500/20 px-4 py-2 rounded-lg border border-emerald-400/40">
+                        <span className="text-emerald-200 font-bold text-xs">⏰ Tempo Total:</span>
+                        <span className="text-emerald-100 font-bold text-sm">{Math.ceil(tempoEstimado / 60)} min</span>
+                      </span>
+                    ) : null;
+                  })()}
+                  
+                  {(() => {
+                    const mapa: any = producao_mapa as any;
+                    const taloes = mapa.taloes || [];
+                    const matrizes = [...new Set(taloes.map((t: any) => t.id_matriz).filter(Boolean))];
+                    return matrizes.length > 0 ? (
+                      <span className="inline-flex items-center gap-2 bg-gray-500/20 px-4 py-2 rounded-lg border border-gray-400/40">
+                        <span className="text-gray-200 font-bold text-xs">🔧 Matriz:</span>
+                        <span className="text-gray-100 font-bold text-sm">#{matrizes.join(', #')}</span>
+                      </span>
+                    ) : null;
+                  })()}
+                  
+                  {(() => {
+                    const mapa: any = producao_mapa as any;
+                    const taloes = mapa.taloes || [];
+                    const cavidades = taloes.find((t: any) => t.qt_cavidades_matriz_simples)?.qt_cavidades_matriz_simples;
+                    return cavidades ? (
+                      <span className="inline-flex items-center gap-2 bg-gray-500/20 px-4 py-2 rounded-lg border border-gray-400/40">
+                        <span className="text-gray-200 font-bold text-xs">🔲 Cavidades:</span>
+                        <span className="text-gray-100 font-bold text-sm">{cavidades}</span>
+                      </span>
+                    ) : null;
+                  })()}
+                </div>
               </div>
             )}
           </div>

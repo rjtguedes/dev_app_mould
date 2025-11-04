@@ -50,6 +50,34 @@ export interface TalaoEstacao {
   talao_tamanho: string;
   quantidade: number;
   tempo_ciclo_segundos: number;
+  // Novos campos retornados pela API
+  estacao_mapa_id?: number;
+  posicao_ordem?: number;
+  matriz_alocada_id?: number | null;
+  iniciada?: boolean;
+  id_maquina?: number | null;
+  inicio_unix?: number | null;
+  concluida_total?: boolean;
+  concluida_parcial?: boolean;
+  fim_unix?: number | null;
+  quantidade_produzida?: number;
+  rejeitos?: number;
+  id_produto?: number | null;
+  created_at?: string;
+  updated_at?: string;
+  id_empresa?: number;
+  created_by?: string | null;
+  updated_by?: string | null;
+  // Campos para retomada de produção parcial
+  saldo_pendente?: number;
+  pode_retomar?: boolean;
+  // 🆕 Novos campos detalhados de produto/matriz/cor
+  descricao_cor?: string;
+  id_cor?: number | null;
+  id_matriz?: number | null;
+  matriz_multi_tamanhos?: boolean;
+  qt_cavidades_matriz_simples?: number | null;
+  percentual_concluido?: number;
 }
 
 export interface MapaDetalhes {

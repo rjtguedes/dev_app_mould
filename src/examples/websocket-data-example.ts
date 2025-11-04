@@ -12,13 +12,11 @@ export const exampleMachineData: MachineDataNew = {
   last_updated: Date.now(),
   
   turnos: {
-    current: "1º Turno",
-    next: "2º Turno",
-    shifts: [
-      { id: 1, nome: "1º Turno", inicio: "06:00", fim: "14:00" },
-      { id: 2, nome: "2º Turno", inicio: "14:00", fim: "22:00" },
-      { id: 3, nome: "3º Turno", inicio: "22:00", fim: "06:00" }
-    ]
+    id: 1,
+    nome: "1º Turno",
+    hora_inicio: "06:00:00",
+    hora_fim: "14:00:00",
+    dias_semana: [1, 2, 3, 4, 5] // Segunda a Sexta
   },
   
   // Dados da sessão do operador
@@ -40,23 +38,74 @@ export const exampleMachineData: MachineDataNew = {
   
   // Dados da produção mapa (ordem de produção)
   producao_mapa: {
+    // IDs de identificação
     id_mapa: 789,
-    id_item_mapa: 456,
+    id_producao_talao_mapa: 456,
+    id_talao_estacao: 411,
+    
+    // IDs de produto/matriz/cor
     id_produto: 123,
     id_cor: 1,
     id_matriz: 5,
+    
+    // Descrições textuais
+    produto_referencia: "2140 FLOW (INT/EXT)",
+    cor_descricao: "Azul Royal",
+    
+    // Quantidades e contadores
+    quantidade_programada: 5000,
     qt_produzir: 5000, // Meta da ordem
+    saldo_a_produzir: 3820, // Saldo restante (5000 - 1180)
     sinais: 1200, // Total de sinais da ordem
     rejeitos: 20, // Rejeitos da ordem
     sinais_validos: 1180, // Sinais válidos da ordem
-    saldo_a_produzir: 3820, // Saldo restante (5000 - 1180)
-    inicio: Date.now() - (4 * 60 * 60 * 1000), // 4 horas atrás
-    sessoes: [1014], // IDs das sessões que trabalharam nesta ordem
+    
+    // Tempos
+    inicio: Math.floor((Date.now() - (4 * 60 * 60 * 1000)) / 1000), // 4 horas atrás (unix timestamp)
+    tempo_produto: 45, // Tempo de ciclo do produto (45 segundos)
+    tempo_estimado: 225000, // Tempo estimado total (5000 * 45 = 225000 segundos)
     tempo_decorrido_segundos: 14400, // 4 horas
     tempo_paradas_segundos: 600, // 10 minutos de paradas
     tempo_paradas_nao_conta_oee: 120, // 2 minutos não contam OEE
     tempo_paradas_validas: 480, // 8 minutos de paradas válidas
-    tempo_valido_segundos: 13800 // Tempo válido de produção
+    tempo_valido_segundos: 13800, // Tempo válido de produção
+    
+    // Array de talões/estações
+    taloes: [
+      {
+        id_talao: 411,
+        estacao_numero: 1,
+        quantidade: 2500,
+        tempo_ciclo_segundos: 45,
+        quantidade_produzida: 590,
+        rejeitos: 10,
+        saldo_pendente: 1910,
+        concluida_total: false,
+        concluida_parcial: false,
+        pode_retomar: false,
+        iniciada: true,
+        inicio_unix: Math.floor((Date.now() - (4 * 60 * 60 * 1000)) / 1000),
+        fim_unix: null
+      },
+      {
+        id_talao: 412,
+        estacao_numero: 2,
+        quantidade: 2500,
+        tempo_ciclo_segundos: 45,
+        quantidade_produzida: 590,
+        rejeitos: 10,
+        saldo_pendente: 1910,
+        concluida_total: false,
+        concluida_parcial: false,
+        pode_retomar: false,
+        iniciada: true,
+        inicio_unix: Math.floor((Date.now() - (4 * 60 * 60 * 1000)) / 1000),
+        fim_unix: null
+      }
+    ],
+    
+    // Sessões relacionadas
+    sessoes: [1014] // IDs das sessões que trabalharam nesta ordem
   },
   
   // Dados do turno (produção geral do turno)
@@ -74,14 +123,22 @@ export const exampleMachineData: MachineDataNew = {
     tempo_paradas_nao_conta_oee: 180, // 3 minutos não contam OEE
     tempo_paradas_validas: 720, // 12 minutos de paradas válidas
     tempo_valido_segundos: 20700 // Tempo válido do turno
-  }
+  },
+  
+  // Parada ativa (null = máquina em produção)
+  parada_ativa: null
 };
 
-// Exemplo de máquina sem sessão ativa
+// Exemplo de máquina sem sessão ativa (mas com parada ativa)
 export const exampleMachineDataNoSession: MachineDataNew = {
   ...exampleMachineData,
   sessao_operador: null,
-  status: false // PARADA
+  status: false, // PARADA
+  parada_ativa: {
+    id: 11171,
+    inicio: Math.floor(Date.now() / 1000) - 300, // 5 minutos atrás
+    motivo_id: null
+  }
 };
 
 // Exemplo de máquina sem ordem de produção ativa
@@ -95,8 +152,59 @@ export const exampleMachineDataEmpty: MachineDataNew = {
   ...exampleMachineData,
   sessao_operador: null,
   producao_mapa: null,
-  status: false
+  status: false,
+  parada_ativa: null
 };
+
+// ==================== EXEMPLO DE PRODUÇÃO PARCIAL ====================
+// Máquina com talão parcialmente concluído (pode retomar)
+export const exampleMachineDataParcial: MachineDataNew = {
+  ...exampleMachineData,
+  producao_mapa: {
+    id_mapa: 790,
+    id_producao_talao_mapa: 457,
+    id_talao_estacao: 413,
+    id_produto: 124,
+    id_cor: 2,
+    id_matriz: 6,
+    produto_referencia: "2150 PREMIUM (INT/EXT)",
+    cor_descricao: "Verde Neon",
+    quantidade_programada: 1000,
+    qt_produzir: 1000,
+    saldo_a_produzir: 550, // Produziu 450 de 1000
+    sinais: 465,
+    rejeitos: 15,
+    sinais_validos: 450,
+    inicio: Math.floor((Date.now() - (2 * 60 * 60 * 1000)) / 1000),
+    tempo_produto: 60,
+    tempo_estimado: 60000,
+    tempo_decorrido_segundos: 7200,
+    tempo_paradas_segundos: 300,
+    tempo_paradas_nao_conta_oee: 60,
+    tempo_paradas_validas: 240,
+    tempo_valido_segundos: 6900,
+    taloes: [
+      {
+        id_talao: 413,
+        estacao_numero: 1,
+        quantidade: 1000,
+        tempo_ciclo_segundos: 60,
+        quantidade_produzida: 450,
+        rejeitos: 15,
+        saldo_pendente: 550,
+        concluida_total: false,
+        concluida_parcial: true, // ⚠️ PRODUÇÃO PARCIAL
+        pode_retomar: true, // ✅ PODE RETOMAR
+        iniciada: true,
+        inicio_unix: Math.floor((Date.now() - (2 * 60 * 60 * 1000)) / 1000),
+        fim_unix: Math.floor(Date.now() / 1000) // Finalizado agora
+      }
+    ],
+    sessoes: [1014]
+  }
+};
+
+
 
 
 
