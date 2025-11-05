@@ -234,11 +234,6 @@ export function Settings({ onBack, onMachineSelect }: SettingsProps) {
       </nav>
 
       <main className="max-w-3xl mx-auto p-4">
-        <div className="bg-white/10 backdrop-blur-sm rounded-xl p-6 mb-6 border border-white/10">
-          <h2 className="text-xl font-semibold text-white mb-2">Identificação do Dispositivo</h2>
-          <p className="text-blue-200 font-mono">{deviceId}</p>
-        </div>
-
         <div className="space-y-6">
           <h2 className="text-xl font-semibold text-white">Selecionar Máquina</h2>
           
