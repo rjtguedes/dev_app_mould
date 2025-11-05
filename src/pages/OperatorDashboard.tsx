@@ -540,7 +540,6 @@ export function OperatorDashboard({
       <Sidebar
         pendingStops={0}
         pendingStopStartTime={null}
-        justifiedStopReason={null}
         sessionId={sessionId}
         machineId={machine.id_maquina}
         operadorId={operator?.id_operador || 0}

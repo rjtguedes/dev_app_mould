@@ -285,13 +285,6 @@ class APIService {
 
   // ==================== COMANDOS DE FINALIZAÇÃO ====================
 
-  async finalizarSessao(request: FinalizarSessaoRequest): Promise<APIResponse> {
-    return this.request('/api/sessao/finalizar', {
-      method: 'POST',
-      body: JSON.stringify(request)
-    });
-  }
-
   async finalizarTalao(request: FinalizarTalaoRequest): Promise<APIResponse> {
     return this.request('/api/talao/finalizar', {
       method: 'POST',
