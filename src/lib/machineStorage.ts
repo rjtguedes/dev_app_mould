@@ -35,10 +35,20 @@ export class MachineStorage {
       if (!stored) return null;
       
       const machine: Machine = JSON.parse(stored);
+      
+      // ✅ Validar se dados da máquina são válidos
+      if (!machine.id_maquina || !machine.nome) {
+        console.warn('⚠️ Dados de máquina corrompidos, removendo...');
+        localStorage.removeItem(STORAGE_KEYS.CURRENT_MACHINE);
+        return null;
+      }
+      
       console.log(`📖 Máquina carregada do localStorage:`, machine.nome);
       return machine;
     } catch (error) {
-      console.error('❌ Erro ao carregar máquina do localStorage:', error);
+      console.error('❌ Erro ao carregar máquina do localStorage (dados corrompidos):', error);
+      // Limpar dados corrompidos
+      localStorage.removeItem(STORAGE_KEYS.CURRENT_MACHINE);
       return null;
     }
   }

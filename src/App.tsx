@@ -29,19 +29,21 @@ function App() {
   const [logoClickCount, setLogoClickCount] = useState(0);
   
   // ✅ NOVO: Usando hook de autenticação da API REST
-  const { isAuthenticated, operator, secondaryOperator, isLoading, error, login, logout, checkSavedSession } = useAuth();
+  const { isAuthenticated, operator, secondaryOperator, isLoading, error, login, logout, checkSavedSession, restoreSession, clearAllLocalData } = useAuth();
   
   useWakeLock();
 
-  // ✅ NOVO: Se houver erro de autenticação em useAuth, limpar sessão salva e forçar login
+  // ✅ NOVO: Se houver erro de autenticação em useAuth, limpar TODOS os dados locais
   useEffect(() => {
-    if (error && (error.includes('401') || error.includes('403') || error.includes('não autorizado') || error.includes('autenticação'))) {
-      console.warn('⚠️ App: Erro de autenticação detectado, limpando sessão salva');
-      localStorage.removeItem('industrack_active_session');
+    if (error && (error.includes('401') || error.includes('403') || error.includes('não autorizado') || error.includes('autenticação') || error.includes('sessão inválida'))) {
+      console.warn('⚠️ App: Erro de autenticação detectado, limpando TODOS os dados locais');
+      clearAllLocalData();
       // Limpar estado de autenticação
       logout();
+      // Limpar máquina selecionada
+      setCurrentMachine(null);
     }
-  }, [error, logout]);
+  }, [error, logout, clearAllLocalData]);
 
   // 🧪 Atalhos para testes (Ctrl+Shift+S, Ctrl+Shift+C, Ctrl+Shift+D)
   useEffect(() => {
@@ -67,6 +69,11 @@ function App() {
       try {
         console.log('🚀 Inicializando aplicação...');
         
+        // ✅ Limpar chaves obsoletas/legadas
+        console.log('🧹 Limpando chaves obsoletas do localStorage...');
+        localStorage.removeItem('industrack_session'); // Chave antiga
+        localStorage.removeItem('industrack_device_id'); // Não mais usado
+        
         // Para modo admin, ainda verificamos sessão Supabase
         const { data: { session } } = await supabase.auth.getSession();
         if (session) {
@@ -79,34 +86,36 @@ function App() {
         // ✅ NOVO: Verificar se há sessão ativa salva (para modo operador)
         const savedSession = checkSavedSession();
         if (savedSession) {
-          console.log('✅ Sessão ativa encontrada, restaurando autenticação...');
+          console.log('✅ Sessão ativa encontrada, validando e restaurando...');
           
           // Carregar máquina salva
           const savedMachine = machineStorage.getCurrentMachine();
+          
+          // ✅ Validar se máquina e sessão são compatíveis
           if (savedMachine && savedMachine.id_maquina === savedSession.id_maquina) {
-            console.log('📖 Máquina da sessão encontrada:', savedMachine.nome);
+            console.log('✅ Máquina válida para sessão:', savedMachine.nome);
             setCurrentMachine(savedMachine);
             
-            // ✅ Restaurar estado de autenticação baseado na sessão salva
-            // Nota: Não vamos chamar login novamente, apenas restaurar o estado
-            // O backend já tem a sessão ativa, só precisamos navegar para dashboard
-            console.log('🔄 Restaurando autenticação para sessão:', savedSession.id_sessao);
-            // Não precisamos fazer login novamente, apenas indicar que está autenticado
-            // O useAuth vai gerenciar isso através da sessão salva
+            // ✅ Restaurar estado de autenticação
+            const restored = restoreSession(savedSession);
+            if (restored) {
+              console.log('✅ Autenticação restaurada - indo direto para dashboard');
+            } else {
+              console.error('❌ Falha ao restaurar autenticação');
+              clearAllLocalData();
+              setCurrentMachine(null);
+            }
           } else {
-            console.log('⚠️ Máquina da sessão não encontrada ou diferente');
-            // Limpar sessão inválida
-            localStorage.removeItem('industrack_active_session');
+            console.warn('⚠️ Máquina incompatível com sessão salva - limpando dados');
+            // Limpar TODOS os dados inválidos
+            clearAllLocalData();
+            setCurrentMachine(null);
           }
         } else {
-          // ✅ NOVO: Carregar máquina do localStorage (se não houver sessão ativa)
-          const savedMachine = machineStorage.getCurrentMachine();
-          if (savedMachine) {
-            console.log('📖 Máquina carregada do localStorage:', savedMachine.nome);
-            setCurrentMachine(savedMachine);
-          } else {
-            console.log('📋 Nenhuma máquina salva localmente');
-          }
+          // Sem sessão ativa válida - limpar máquina também para forçar novo login
+          console.log('📋 Nenhuma sessão ativa válida - limpando máquina salva');
+          localStorage.removeItem('industrack_current_machine');
+          setCurrentMachine(null);
         }
       } catch (error) {
         console.error('❌ Erro na inicialização:', error);
@@ -393,45 +402,20 @@ function App() {
     />;
   }
 
-  // ✅ NOVO: Verificar se há sessão salva antes de mostrar tela de login
-  const savedSession = checkSavedSession();
-  const hasActiveSession = savedSession !== null;
-
-  // Se houver sessão ativa E máquina selecionada, ir direto para dashboard
-  // ✅ Mas só se não houver erro de autenticação
-  if (hasActiveSession && currentMachine && !showSettings && !error) {
-    // Criar operador fake baseado na sessão salva (para compatibilidade)
-    const restoredOperator = operator || {
-      id_operador: savedSession.id_operador,
-      nome: 'Operador',
-      empresa: 0,
-      cargo: 'Operador',
-      ativo: true,
-      id_empresa: 0
-    };
-
+  // ✅ Se autenticado E tem máquina, mostrar dashboard
+  if (isAuthenticated && currentMachine && !showSettings) {
     return (
       <MachineSelection 
         initialMachine={currentMachine} 
         onShowSettings={() => setShowSettings(true)}
-        secondaryOperator={null}
-        operator={restoredOperator}
+        secondaryOperator={secondaryOperator}
+        operator={operator}
       />
     );
   }
 
-  if (isAuthenticated) {
-    if (currentMachine) {
-      return (
-        <MachineSelection 
-          initialMachine={currentMachine} 
-          onShowSettings={() => setShowSettings(true)}
-          secondaryOperator={secondaryOperator}
-          operator={operator} // ✅ NOVO: Passando dados do operador da API REST
-        />
-      );
-    }
-
+  // ✅ Se autenticado mas sem máquina, ir para seleção
+  if (isAuthenticated && !currentMachine) {
     return <Settings onBack={() => {}} onMachineSelect={handleMachineSelect} />;
   }
 

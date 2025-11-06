@@ -50,6 +50,7 @@ export function OperatorDashboard({
   const [isManualStop, setIsManualStop] = useState(false);
   const [stopReasons, setStopReasons] = useState<StopReason[]>([]);
   const [loadingStopReasons, setLoadingStopReasons] = useState(false);
+  const [validationExecuted, setValidationExecuted] = useState(false); // Prevenir loops
 
   // 🔊 Sons
   const { playAlert, playStop, playResume, playError, playSuccess } = useSounds();
@@ -90,6 +91,100 @@ export function OperatorDashboard({
       setStoredProduction(null);
     }
   }, [machine.id_maquina, showProductionCommands]);
+
+  // ✅ NOVO: Validar dados locais com dados do SSE (Backend sempre tem razão)
+  useEffect(() => {
+    // Só validar se houver dados SSE disponíveis E se ainda não validou (prevenir loops)
+    if (!machineData || !machineData.contexto || validationExecuted) return;
+    
+    const ctx = machineData.contexto;
+    const producaoBackend = ctx.producao_mapa;
+    const sessaoBackend = ctx.sessao_operador;
+    
+    console.log('🔍 Validando dados locais vs backend:', {
+      tem_sessao_backend: !!sessaoBackend,
+      tem_producao_backend: !!producaoBackend,
+      tem_sessao_local: !!localStorage.getItem('industrack_active_session'),
+      tem_producao_local: !!storedProduction
+    });
+    
+    // ✅ VALIDAÇÃO 1: Sessão local vs Backend
+    const savedSessionStr = localStorage.getItem('industrack_active_session');
+    if (savedSessionStr) {
+      try {
+        const savedSession = JSON.parse(savedSessionStr);
+        
+        // ⚠️ CUIDADO: Só limpar se backend realmente NÃO tem sessão (não apenas undefined)
+        // Backend pode demorar para enviar sessao_operador na primeira mensagem
+        if (!sessaoBackend && sessaoBackend !== undefined) {
+          console.warn('⚠️ Backend confirmou que não há sessão ativa - limpando dados locais');
+          localStorage.removeItem('industrack_active_session');
+          localStorage.removeItem('industrack_current_production');
+          localStorage.removeItem('industrack_current_machine');
+          setValidationExecuted(true);
+          // Forçar reload para voltar ao login (só executa uma vez)
+          setTimeout(() => window.location.reload(), 1000);
+          return;
+        }
+        
+        // Se backend tem sessão diferente da local, atualizar localStorage (sem reload)
+        if (sessaoBackend && sessaoBackend.id_sessao && savedSession.id_sessao !== sessaoBackend.id_sessao) {
+          console.log('ℹ️ Sessão local diferente do backend - sincronizando localStorage');
+          const newSession = {
+            id_sessao: sessaoBackend.id_sessao,
+            id_operador: sessaoBackend.id_operador,
+            id_maquina: machine.id_maquina,
+            timestamp: Date.now()
+          };
+          localStorage.setItem('industrack_active_session', JSON.stringify(newSession));
+        }
+      } catch (e) {
+        console.error('❌ Erro ao validar sessão:', e);
+      }
+    }
+    
+    // ✅ VALIDAÇÃO 2: Produção local vs Backend (só limpa, sem reload)
+    if (storedProduction && producaoBackend === null) {
+      console.log('ℹ️ Produção local existe mas backend não tem - limpando localStorage');
+      localStorage.removeItem('industrack_current_production');
+      setStoredProduction(null);
+    }
+    
+    // Se mapas são diferentes, sincronizar com backend
+    if (storedProduction && producaoBackend && storedProduction.id_mapa !== producaoBackend.id_mapa) {
+      console.log('ℹ️ Mapa local diferente do backend - sincronizando');
+      localStorage.removeItem('industrack_current_production');
+      setStoredProduction(null);
+    }
+    
+    // Marcar validação como executada após primeira verificação bem-sucedida
+    if (sessaoBackend) {
+      setValidationExecuted(true);
+    }
+  }, [machineData, storedProduction, machine.id_maquina, validationExecuted]);
+
+  // ✅ NOVO: Consultar contexto automaticamente a cada 30 segundos
+  useEffect(() => {
+    console.log('⏰ Iniciando consulta automática de contexto (30s)...');
+    
+    // Consulta inicial após 5 segundos
+    const initialTimer = setTimeout(() => {
+      console.log('🔄 Consulta inicial de contexto (5s após carregar)');
+      consultarContexto().catch(err => console.warn('⚠️ Erro na consulta inicial:', err));
+    }, 5000);
+
+    // Consulta periódica a cada 30 segundos
+    const interval = setInterval(() => {
+      console.log('🔄 Consulta automática de contexto (30s)');
+      consultarContexto().catch(err => console.warn('⚠️ Erro na consulta automática:', err));
+    }, 30000);
+
+    return () => {
+      clearTimeout(initialTimer);
+      clearInterval(interval);
+      console.log('⏰ Consulta automática de contexto encerrada');
+    };
+  }, [consultarContexto]);
 
   // Detectar tipo de máquina
   const isEvaMode = machine.nome?.toLowerCase().includes('eva') || false;
@@ -301,6 +396,106 @@ export function OperatorDashboard({
     }
   };
 
+  // ✅ Handler para finalizar estação/talão atual
+  const handleFinalizarEstacaoAtual = async () => {
+    try {
+      // ✅ Usar dados do BACKEND (SSE) como fonte principal
+      const producaoBackend = machineData?.contexto?.producao_mapa;
+      
+      if (!producaoBackend || !producaoBackend.id_talao_estacao) {
+        playError();
+        alert('⚠️ Nenhuma produção em andamento para finalizar.');
+        return;
+      }
+
+      const idTalao = producaoBackend.id_talao_estacao;
+      const idMapa = producaoBackend.id_mapa;
+      const saldo = producaoBackend.saldo_a_produzir ?? 0;
+      
+      console.log('🏁 Finalizando produção atual (dados do backend):', {
+        id_talao: idTalao,
+        id_mapa: idMapa,
+        saldo
+      });
+
+      // Confirmar com usuário
+      const confirmar = confirm(
+        `🏁 Finalizar Produção?\n\n` +
+        `Mapa: #${idMapa}\n` +
+        `Talão: #${idTalao}\n` +
+        `Saldo: ${saldo} peças\n\n` +
+        `Deseja finalizar esta produção?`
+      );
+
+      if (!confirmar) {
+        console.log('❌ Finalização cancelada pelo usuário');
+        return;
+      }
+
+      console.log('📤 Enviando finalização:', {
+        id_maquina: machine.id_maquina,
+        id_talao: idTalao,
+        estacao_numero: 1 // Para máquinas simples
+      });
+
+      playStop();
+
+      // Chamar API para finalizar
+      const response = await apiService.finalizarEstacao({
+        id_maquina: machine.id_maquina,
+        id_talao: idTalao,
+        estacao_numero: 1, // Máquinas simples = estação 1
+        motivo: 'Produção concluída pelo operador'
+      });
+
+      if (response.success) {
+        console.log('✅ Estação finalizada com sucesso:', response.data);
+        playSuccess();
+
+        // Mostrar resultado
+        const resultado = response.data || {};
+        alert(
+          `✅ Produção Finalizada!\n\n` +
+          `📦 Produzidas: ${resultado.produzido_sinais_validos || 0}\n` +
+          `❌ Rejeitos: ${resultado.rejeitos || 0}\n\n` +
+          `Atualizando dados...`
+        );
+
+        // ✅ Atualizar localStorage se houver (para manter fila de talões)
+        if (storedProduction && storedProduction.taloes) {
+          const taloesRestantes = storedProduction.taloes.filter(t => t.id_talao !== idTalao);
+          
+          if (taloesRestantes.length > 0) {
+            // Ainda há talões na fila, atualizar localStorage
+            const novaProducao = {
+              ...storedProduction,
+              taloes: taloesRestantes,
+              timestamp: Date.now()
+            };
+            localStorage.setItem('industrack_current_production', JSON.stringify(novaProducao));
+            setStoredProduction(novaProducao);
+            console.log('📋 Produção local atualizada:', taloesRestantes.length, 'talões restantes na fila');
+          } else {
+            // Não há mais talões na fila, limpar
+            localStorage.removeItem('industrack_current_production');
+            setStoredProduction(null);
+            console.log('✅ Todos os talões da fila foram finalizados');
+          }
+        }
+
+        // ✅ Atualizar contexto do backend (fonte da verdade)
+        await consultarContexto();
+        
+      } else {
+        throw new Error(response.error || 'Erro ao finalizar produção');
+      }
+    } catch (error) {
+      console.error('❌ Erro ao finalizar estação:', error);
+      playError();
+      alert(`❌ Erro ao finalizar produção:\n${error instanceof Error ? error.message : 'Erro desconhecido'}`);
+    }
+  };
+
   // Handler para encerrar parcial
   const handleEncerrarParcial = async () => {
     try {
@@ -351,6 +546,16 @@ export function OperatorDashboard({
       if (response.success) {
         console.log('✅ Produção iniciada com sucesso');
         playSuccess();
+        
+        // ✅ NOVO: Consultar contexto atualizado logo após iniciar produção
+        console.log('🔄 Consultando contexto atualizado após iniciar produção...');
+        try {
+          await consultarContexto();
+          console.log('✅ Contexto atualizado após iniciar produção');
+        } catch (contextError) {
+          console.warn('⚠️ Erro ao consultar contexto após iniciar produção:', contextError);
+          // Não falhar se consulta de contexto der erro, produção já foi iniciada
+        }
       } else {
         throw new Error(response.error || 'Erro ao iniciar produção');
       }
@@ -622,34 +827,45 @@ export function OperatorDashboard({
 
       {/* Main Content */}
       <main className={`flex-1 transition-all duration-300 ${sidebarCollapsed ? 'ml-16' : 'ml-64'} pt-16 p-6`}>
-        {/* Indicador de Produção Atual (local) */}
-        {storedProduction && (
+        {/* Indicador de Produção Atual - BASEADO NO BACKEND (SSE) */}
+        {machineData?.contexto?.producao_mapa && (
           <div className="mb-4 bg-green-600/20 border border-green-400/40 rounded-xl p-4 text-sm text-green-100 flex items-center justify-between">
             <div className="flex items-center gap-3">
               <span className="px-2 py-1 rounded-lg bg-green-500/30 border border-green-400/60 font-bold uppercase text-xs">Em Produção</span>
-              <span className="font-semibold">Mapa #{storedProduction.id_mapa}</span>
+              <span className="font-semibold">Mapa #{machineData.contexto.producao_mapa.id_mapa}</span>
               <span className="opacity-80">•</span>
-              <span>{storedProduction.taloes.length} talão(ões) selecionado(s)</span>
+              <span className="font-semibold">Talão #{machineData.contexto.producao_mapa.id_talao_estacao || 'N/A'}</span>
+              {machineData.contexto.producao_mapa.saldo_a_produzir !== undefined && (
+                <>
+                  <span className="opacity-80">•</span>
+                  <span className="font-semibold text-yellow-200">Saldo: {machineData.contexto.producao_mapa.saldo_a_produzir}</span>
+                </>
+              )}
+              {storedProduction && storedProduction.taloes && storedProduction.taloes.length > 1 && (
+                <>
+                  <span className="opacity-80">•</span>
+                  <span className="text-blue-200 text-xs">{storedProduction.taloes.length} talões na fila</span>
+                </>
+              )}
             </div>
-            <button
-              className="text-xs px-2 py-1 rounded-lg bg-white/10 hover:bg-white/20 border border-white/20"
-              onClick={() => {
-                // Atualizar do localStorage manualmente em caso de mudanças externas
-                try {
-                  const str = localStorage.getItem('industrack_current_production');
-                  const data = str ? JSON.parse(str) : null;
-                  if (data && data.id_maquina === machine.id_maquina) {
-                    setStoredProduction(data);
-                  } else {
-                    setStoredProduction(null);
-                  }
-                } catch {
-                  setStoredProduction(null);
-                }
-              }}
-            >
-              Atualizar
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                className="px-4 py-2 rounded-lg bg-red-500/80 hover:bg-red-500 border border-red-400 text-white font-bold text-sm transition-all duration-200 shadow-lg hover:shadow-red-500/50"
+                onClick={handleFinalizarEstacaoAtual}
+                title="Finalizar produção da estação atual"
+              >
+                🏁 Finalizar Estação
+              </button>
+              <button
+                className="text-xs px-2 py-1 rounded-lg bg-white/10 hover:bg-white/20 border border-white/20"
+                onClick={() => {
+                  consultarContexto().catch(err => console.warn('Erro ao atualizar:', err));
+                }}
+                title="Atualizar dados do backend"
+              >
+                🔄 Atualizar
+              </button>
+            </div>
           </div>
         )}
         {error && (

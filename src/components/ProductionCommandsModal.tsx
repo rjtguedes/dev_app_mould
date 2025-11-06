@@ -292,9 +292,13 @@ export function ProductionCommandsModal({
       console.error('❌ Erro ao retomar talão:', error);
       const errorMessage = error instanceof Error ? error.message : 'Erro ao retomar talão';
       
-      // Verificar se é erro de endpoint não implementado
+      // Verificar tipos de erro
       if (errorMessage.includes('404') || errorMessage.includes('Not Found')) {
         setError('⚠️ Endpoint de retomada ainda não foi implementado no backend. Verifique PRODUCAO_PARCIAL_RETOMADA.md');
+      } else if (errorMessage.includes('saldo_pendente does not exist') || errorMessage.includes('42703')) {
+        setError('⚠️ Erro no banco de dados: A coluna "saldo_pendente" não existe na tabela taloes_estacao. O backend precisa ser corrigido para calcular o saldo dinamicamente ou adicionar a coluna ao banco.');
+      } else if (errorMessage.includes('500') || errorMessage.includes('Internal Server Error')) {
+        setError(`❌ Erro interno do servidor: ${errorMessage}\n\nVerifique os logs do backend para mais detalhes.`);
       } else {
         setError(errorMessage);
       }

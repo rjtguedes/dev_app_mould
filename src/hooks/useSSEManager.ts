@@ -15,6 +15,25 @@ import type {
   RetomarParadaRequest
 } from '../services/apiService';
 
+// ✅ NOVO: Função auxiliar para salvar sessão no localStorage
+function saveSessaoToLocalStorage(sessao: any, id_maquina: number) {
+  if (!sessao || !sessao.id_sessao) return;
+  
+  try {
+    const sessionData = {
+      id_sessao: sessao.id_sessao,
+      id_operador: sessao.id_operador,
+      id_maquina: id_maquina,
+      timestamp: Date.now()
+    };
+    
+    localStorage.setItem('industrack_active_session', JSON.stringify(sessionData));
+    console.log('💾 Sessão salva no localStorage (via SSE):', sessionData.id_sessao);
+  } catch (error) {
+    console.error('❌ Erro ao salvar sessão no localStorage:', error);
+  }
+}
+
 interface SSEManagerOptions {
   machineId: number;
   enabled?: boolean;
@@ -42,8 +61,9 @@ export function useSSEManager(options: SSEManagerOptions) {
     if (!producaoAtiva) return null;
     const referencia = producaoAtiva.referencia || producaoAtiva.produto_referencia || null;
     const qt = (producaoAtiva.qt_produzir ?? producaoAtiva.quantidade_programada ?? producaoAtiva.quantidade) ?? 0;
-    return {
-      ...producaoAtiva,
+    
+    const mapped = {
+      ...producaoAtiva, // ✅ Preserva TODOS os campos do backend
       // Aliases usados na UI
       referencia,
       codmapa: producaoAtiva.codmapa || referencia,
@@ -52,8 +72,23 @@ export function useSSEManager(options: SSEManagerOptions) {
       // Garantir contadores numéricos
       sinais: producaoAtiva.sinais ?? 0,
       sinais_validos: producaoAtiva.sinais_validos ?? producaoAtiva.sinais ?? 0,
-      rejeitos: producaoAtiva.rejeitos ?? 0
+      rejeitos: producaoAtiva.rejeitos ?? 0,
+      // ✅ Garantir campos de produto e cor
+      produto_referencia: producaoAtiva.produto_referencia ?? null,
+      cor_descricao: producaoAtiva.cor_descricao ?? null,
+      id_produto: producaoAtiva.id_produto ?? null,
+      id_cor: producaoAtiva.id_cor ?? null,
+      id_matriz: producaoAtiva.id_matriz ?? null
     };
+    
+    console.log('🎨 mapProducaoAtiva:', {
+      tem_produto: !!mapped.produto_referencia,
+      tem_cor: !!mapped.cor_descricao,
+      produto: mapped.produto_referencia,
+      cor: mapped.cor_descricao
+    });
+    
+    return mapped;
   }, []);
 
   // ✅ DEBUG: Log quando machineData é atualizado
@@ -63,12 +98,23 @@ export function useSSEManager(options: SSEManagerOptions) {
         tipo: 'dados_mapeados',
         id: machineData.contexto?.id,
         nome: machineData.contexto?.nome,
-        status: machineData.contexto?.status,
+        velocidade: machineData.contexto?.velocidade, // ← LOG IMPORTANTE
+        status: machineData.contexto?.status, // ← LOG IMPORTANTE
+        parada_ativa: machineData.contexto?.parada_ativa, // ← LOG IMPORTANTE
         sinais_sessao: machineData.contexto?.sessao_operador?.sinais,
         sinais_validos: machineData.contexto?.sessao_operador?.sinais_validos,
-        rejeitos_sessao: machineData.contexto?.sessao_operador?.rejeitos,
-        parada_ativa: machineData.contexto?.parada_ativa
+        rejeitos_sessao: machineData.contexto?.sessao_operador?.rejeitos
       });
+      
+      // ⚠️ ALERTA se velocidade for 0 mas máquina tiver produção ativa
+      if (machineData.contexto?.velocidade === 0 && machineData.contexto?.producao_mapa) {
+        console.warn('⚠️ INCONSISTÊNCIA: Velocidade = 0 mas há produção ativa!', {
+          velocidade: machineData.contexto.velocidade,
+          producao_mapa: machineData.contexto.producao_mapa,
+          parada_ativa: machineData.contexto.parada_ativa,
+          status: machineData.contexto.status
+        });
+      }
     }
   }, [machineData]);
 
@@ -255,6 +301,12 @@ export function useSSEManager(options: SSEManagerOptions) {
       };
       
       console.log(`✅ SSE Manager: Dados da máquina principal (nova estrutura):`, mainMachineData);
+      
+      // ✅ NOVO: Salvar sessão no localStorage quando receber do SSE
+      if (contextData.sessao_ativa && contextData.sessao_ativa.id_sessao) {
+        saveSessaoToLocalStorage(contextData.sessao_ativa, machineId);
+      }
+      
       // 🔒 Não sobrescrever contadores com zeros logo após reinício de sessão
       setMachineData(prev => {
         if (!prev || !prev.contexto) return mainMachineData;
@@ -395,6 +447,12 @@ export function useSSEManager(options: SSEManagerOptions) {
       } as any;
 
       console.log(`✅ SSE Manager: Dados passados para UI (normalizados):`, dadosParaExibir);
+      
+      // ✅ NOVO: Salvar sessão no localStorage quando receber do SSE (máquina simples)
+      const sessaoRecebida = contextData.sessao_ativa ?? contextData.sessao_operador;
+      if (sessaoRecebida && sessaoRecebida.id_sessao) {
+        saveSessaoToLocalStorage(sessaoRecebida, machineId);
+      }
       // 🔒 Não sobrescrever contadores com zeros logo após reinício de sessão
       setMachineData(prev => {
         if (!prev || !prev.contexto) return dadosParaExibir;
@@ -434,7 +492,7 @@ export function useSSEManager(options: SSEManagerOptions) {
       });
       return;
     }
-  }, [buscarMaquinasFilhas]);
+  }, [machineId, buscarMaquinasFilhas, mapProducaoAtiva]);
 
   // Handler para mensagens SSE
   const handleSSEMessage = useCallback((data: any) => {
@@ -677,12 +735,20 @@ export function useSSEManager(options: SSEManagerOptions) {
         const idParada = payload.id_parada_atual || payload.parada_id || Date.now();
         const inicioUnix = payload.inicio_unix_segundos || payload.inicio || Math.floor(Date.now() / 1000);
         const motivoId = payload.id_motivo || payload.motivo_id || null;
+        
+        console.log('🛑 PARADA DETECTADA - Atualizando contexto:', {
+          velocidade_antes: prev.contexto.velocidade,
+          status_antes: prev.contexto.status,
+          id_parada: idParada,
+          motivo: motivoId
+        });
+        
         return {
           ...prev,
           contexto: {
             ...prev.contexto, // Manter tudo que já existe
             status: false, // Máquina PARADA
-            velocidade: prev.contexto.velocidade || 0, // Manter velocidade existente ou 0
+            velocidade: 0, // ✅ Zerar velocidade quando parada (backend não envia velocidade em evento parada)
             parada_ativa: {
               id: idParada,
               inicio_unix_segundos: inicioUnix,

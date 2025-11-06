@@ -210,10 +210,55 @@ export function useAuth() {
     }
   };
 
+  // ✅ NOVO: Função para limpar todos os dados locais
+  const clearAllLocalData = () => {
+    console.log('🧹 Limpando TODOS os dados locais...');
+    try {
+      localStorage.removeItem('industrack_active_session');
+      localStorage.removeItem('industrack_current_machine');
+      localStorage.removeItem('industrack_current_production');
+      localStorage.removeItem('industrack_machines_list');
+      localStorage.removeItem('industrack_machines_last_update');
+      console.log('✅ Todos os dados locais foram limpos');
+    } catch (error) {
+      console.error('❌ Erro ao limpar dados locais:', error);
+    }
+  };
+
+  // ✅ NOVO: Restaurar sessão salva e atualizar estado de autenticação
+  const restoreSession = (savedSession: any) => {
+    try {
+      console.log('🔄 Restaurando estado de autenticação da sessão:', savedSession.id_sessao);
+      
+      // Criar objeto de operador baseado na sessão salva
+      const restoredOperator = {
+        id_operador: savedSession.id_operador,
+        nome: 'Operador', // Nome será atualizado quando conectar ao backend
+        empresa: 0
+      };
+
+      setAuthState({
+        isAuthenticated: true,
+        operator: restoredOperator,
+        secondaryOperator: null,
+        isLoading: false,
+        error: ''
+      });
+
+      console.log('✅ Sessão restaurada com sucesso');
+      return true;
+    } catch (error) {
+      console.error('❌ Erro ao restaurar sessão:', error);
+      return false;
+    }
+  };
+
   return {
     ...authState,
     login,
     logout,
-    checkSavedSession
+    checkSavedSession,
+    restoreSession,
+    clearAllLocalData
   };
 }

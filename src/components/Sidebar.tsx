@@ -107,32 +107,14 @@ export function Sidebar({
   }, [sessionId]);
 
   // Detectar modo admin
+  // ✅ Modo admin agora é detectado apenas pelo PIN 5777 no login (API REST)
+  // Não precisamos mais verificar no Supabase
   React.useEffect(() => {
     const checkAdminMode = async () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (user) {
-        // Buscar o operador associado ao usuário
-        const { data: operatorData, error: operatorError } = await supabase
-          .from('operador')
-          .select('id')
-          .eq('user', user.id)
-          .eq('Delete', false)
-          .single();
-
-        if (!operatorError && operatorData) {
-          // Verificar se este operador tem o PIN 5777
-          const { data: fastAccessData, error: fastAccessError } = await supabase
-            .from('operator_fast_acess')
-            .select('PIN')
-            .eq('operador', operatorData.id)
-            .eq('PIN', 5777)
-            .single();
-
-          if (!fastAccessError && fastAccessData) {
-            console.log('Modo admin detectado no Sidebar');
-            setIsAdminMode(true);
-          }
-        }
+        console.log('Modo admin (Supabase auth) detectado no Sidebar');
+        setIsAdminMode(true);
       }
     };
     checkAdminMode();
@@ -153,98 +135,50 @@ export function Sidebar({
       return;
     }
 
-    // Se não há sessionId, tentar criar uma sessão ou buscar uma existente
+    // ✅ sessionId é opcional - backend só precisa de machineId
     let sessionToEnd = sessionId;
     if (!sessionToEnd) {
-      console.log('Nenhum sessionId disponível, tentando buscar sessão...');
-      
-      try {
-        // Primeiro buscar o usuário atual
-        const { data: { user } } = await supabase.auth.getUser();
-        if (!user) {
-          console.error('Usuário não encontrado');
-          return;
-        }
-
-        // Buscar o operador
-        const { data: operatorData, error: operatorError } = await supabase
-          .from('operador')
-          .select('id')
-          .eq('user', user.id)
-          .eq('Delete', false)
-          .single();
-
-        if (operatorError || !operatorData) {
-          console.error('Erro ao buscar operador:', operatorError);
-          return;
-        }
-
-        // Verificar se há sessão ativa
-        const { data: sessions, error: sessionsError } = await supabase
-          .from('sessoes')
-          .select('id')
-          .eq('operador', operatorData.id)
-          .eq('maquina', machineId)
-          .is('fim', null)
-          .order('created_at', { ascending: false })
-          .limit(1);
-
-        if (sessionsError) {
-          console.error('Erro ao buscar sessões:', sessionsError);
-          return;
-        }
-
-        if (sessions && sessions.length > 0) {
-          sessionToEnd = sessions[0].id;
-          console.log('Sessão ativa encontrada:', sessionToEnd);
-        } else {
-          // NÃO criar nova sessão aqui - apenas informar que não há sessão
-          console.log('Nenhuma sessão ativa encontrada - não é possível encerrar');
-          setErrorModalMessage('Nenhuma sessão ativa encontrada para encerrar');
-          return;
-        }
-      } catch (err) {
-        console.error('Erro ao buscar/criar sessão:', err);
-        return;
-      }
+      console.log('⚠️ sessionId não disponível, mas backend só precisa de machineId - prosseguindo...');
+    } else {
+      console.log('✅ sessionId disponível:', sessionToEnd);
     }
 
-    // Armazenar o sessionId para usar no encerramento
+    // Armazenar o sessionId para usar no encerramento (pode ser null)
     setCurrentSessionId(sessionToEnd);
 
-    // Carregar dados: priorizar WebSocket (wsData)
-    if (wsData) {
+    // ✅ Carregar dados do SSE (wsData - contexto)
+    if (wsData && wsData.contexto) {
+      const ctx = wsData.contexto;
+      
+      // Dados da máquina
       setMachineStats({
-        velocidade: wsData.velocidade ?? 0,
-        status: !(wsData.parada_ativa),
-        ultimo_sinal: wsData.last_updated ?? undefined
+        velocidade: ctx.velocidade ?? 0,
+        status: ctx.status ?? true,
+        ultimo_sinal: ctx.last_updated ?? undefined
       });
-    } else {
-      // Fallback: machine_stats (legado)
-      setLoadingStats(true);
-      try {
-        const { data, error } = await supabase
-          .from('machine_stats')
-          .select('velocidade, status, ultimo_sinal')
-          .eq('id_maquina', machineId)
-          .single();
-        if (error) {
-          console.error('Erro ao carregar machine_stats:', error);
-          setMachineStats(null);
-        } else {
-          setMachineStats(data);
-        }
-      } catch (err) {
-        console.error('Erro ao carregar machine_stats:', err);
-        setMachineStats(null);
-      } finally {
-        setLoadingStats(false);
-      }
-    }
 
-    // Carregar estatísticas da sessão
-    if (sessionToEnd) {
-      await loadSessionStats(sessionToEnd, machineId);
+      // ✅ Dados da sessão do SSE
+      const sessaoOp = ctx.sessao_operador;
+      if (sessaoOp) {
+        const duracaoSegundos = sessaoOp.tempo_decorrido_segundos ?? sessaoOp.tempo_valido_segundos ?? 0;
+        
+        const stats: SessionStats = {
+          quantidadeProduzida: sessaoOp.sinais_validos ?? sessaoOp.sinais ?? 0,
+          quantidadeRejeito: sessaoOp.rejeitos ?? 0,
+          duracaoSessao: formatDuration(duracaoSegundos),
+          turno: sessaoOp.nome_turno ?? null,
+          oee: {
+            disponibilidade: 0, // Backend não envia no SSE
+            performance: 0,
+            qualidade: sessaoOp.sinais_validos > 0 ? (sessaoOp.sinais_validos / (sessaoOp.sinais_validos + sessaoOp.rejeitos)) : 1,
+            oee: 0
+          }
+        };
+        setSessionStats(stats);
+        console.log('📊 Estatísticas da sessão carregadas do SSE:', stats);
+      }
+    } else {
+      console.warn('⚠️ Sem dados SSE disponíveis para exibir no modal');
     }
 
     // Mostrar modal de confirmação
@@ -266,34 +200,42 @@ export function Sidebar({
     console.log('=== INÍCIO handleConfirmLogout ===');
     setEndingSession(true);
     
-    if (currentSessionId) {
-      try {
-        console.log('Encerrando sessão via API REST, sessionId:', currentSessionId);
-        const response = await apiService.finalizarSessao({
-          id_maquina: machineId,
-          ...(currentSessionId ? { id_sessao: currentSessionId } : {})
-        });
+    try {
+      console.log('🔚 Encerrando sessão via API REST');
+      console.log('📤 Payload:', { id_maquina: machineId, id_sessao: currentSessionId || 'não disponível' });
+      
+      // ✅ Backend só precisa de id_maquina, id_sessao é opcional
+      const response = await apiService.finalizarSessao({
+        id_maquina: machineId,
+        ...(currentSessionId ? { id_sessao: currentSessionId } : {}),
+        motivo: 'Sessão finalizada pelo operador'
+      });
 
-        if (!response.success) {
-          throw new Error(response.error || 'Erro ao finalizar sessão');
-        }
-
-        console.log('✅ Sessão finalizada com sucesso via API');
-
-        // Limpar sessão salva do localStorage
-        localStorage.removeItem('industrack_active_session');
-        console.log('🧹 Sessão ativa removida do localStorage');
-        
-      } catch (err) {
-        console.error('Erro durante o encerramento da sessão:', err);
+      if (!response.success) {
+        throw new Error(response.error || 'Erro ao finalizar sessão');
       }
+
+      console.log('✅ Sessão finalizada com sucesso via API');
+
+      // Limpar sessão salva do localStorage
+      localStorage.removeItem('industrack_active_session');
+      localStorage.removeItem('industrack_current_production');
+      console.log('🧹 Dados da sessão removidos do localStorage');
+      
+    } catch (err) {
+      console.error('❌ Erro durante o encerramento da sessão:', err);
+      // Mesmo com erro, continuar logout local
     }
     
-    console.log('Fazendo logout do Supabase...');
-    await supabase.auth.signOut();
-    console.log('Logout do Supabase concluído');
+    // Logout do Supabase (modo admin)
+    try {
+      await supabase.auth.signOut();
+      console.log('✅ Logout do Supabase concluído');
+    } catch (err) {
+      console.warn('⚠️ Erro no logout Supabase:', err);
+    }
     
-    console.log('Recarregando página...');
+    console.log('🔄 Recarregando página...');
     window.location.reload();
   };
 
@@ -542,127 +484,6 @@ export function Sidebar({
               </div>
             );
           })()}
-
-          {/* Botão para parada em andamento - só mostrar quando relevante */}
-          {(pendingStops > 0 || justifiedStopReason === 'Parada não justificada') && (
-          <button
-            onClick={onShowStops}
-            className={`
-                w-full flex items-center gap-3 px-4 py-4 rounded-xl
-                transition-all duration-300 text-white relative
-              ${isCollapsed ? 'justify-center' : 'justify-start'}
-                ${currentStopJustified 
-                  ? 'bg-green-600 hover:bg-green-700 shadow-lg shadow-green-500/25 border-2 border-green-400/50'
-                  : pendingStops > 0 
-                    ? 'bg-red-600 hover:bg-red-700 shadow-lg shadow-red-500/25 border-2 border-red-400/50' 
-                    : 'bg-orange-600 hover:bg-orange-700 shadow-lg shadow-orange-500/25 border-2 border-orange-400/50'
-                }
-                hover:scale-105 active:scale-95
-              `}
-            >
-              <PauseCircle className={`w-8 h-8 ${
-                currentStopJustified
-                  ? 'text-green-200'
-                  : pendingStops > 0 
-                    ? 'text-red-200' 
-                    : 'text-orange-200'
-              }`} />
-              <div className={`flex flex-col items-start ${isCollapsed ? 'opacity-0 w-0' : 'opacity-100'}`}>
-                <span className={`text-base font-bold ${
-                  currentStopJustified
-                    ? 'text-green-100'
-                    : pendingStops > 0 
-                      ? 'text-red-100' 
-                      : 'text-orange-100'
-                }`}>
-                  {currentStopJustified
-                    ? '✓ Parada Justificada' 
-                    : pendingStops > 0 
-                      ? 'Justificar Parada' 
-                      : 'Parada Não Justificada'
-                  }
-                </span>
-                
-                {pendingStops > 0 && pendingStopStartTime && !currentStopJustified && (
-                  <span className="text-sm text-red-200/80">
-                    Início: {new Date(pendingStopStartTime * 1000).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
-                  </span>
-                )}
-                
-                {/* ✅ NOVO: Indicador quando a parada atual foi justificada */}
-                {currentStopJustified && (
-                  <div className="mt-2 p-2 rounded-lg border bg-green-600/20 border-green-400/30">
-                    <span className="text-xs font-medium text-green-300">
-                      ✓ Justificativa Registrada:
-                    </span>
-                    <div className="text-xs mt-1 text-green-200">
-                      Parada já foi justificada via WebSocket
-                    </div>
-                  </div>
-                )}
-                
-                {justifiedStopReason === 'Parada não justificada' && !currentStopJustified && (
-                  <div className="mt-2 p-2 rounded-lg border bg-orange-600/20 border-orange-400/30">
-                    <span className="text-xs font-medium text-orange-300">
-                      Ação Necessária:
-                    </span>
-                    <div className="text-xs mt-1 text-orange-200">
-                      Clique para justificar esta parada
-                    </div>
-                  </div>
-                )}
-
-                {/* Indicador de status da parada */}
-                {justifiedStopReason && justifiedStopReason !== 'Parada não justificada' && (
-                  <div className="mt-2 p-2 rounded-lg border bg-blue-600/20 border-blue-400/30">
-                    <span className="text-xs font-medium text-blue-300">
-                      Status:
-                    </span>
-                    <div className="text-xs mt-1 text-blue-200">
-                      Parada justificada: {justifiedStopReason}
-                    </div>
-                  </div>
-                )}
-
-                {/* Indicador quando máquina está parada e parada já foi justificada */}
-                {!canPreJustify && justifiedStopReason && justifiedStopReason !== 'Parada não justificada' && (
-                  <div className="mt-2 p-2 rounded-lg border bg-yellow-600/20 border-yellow-400/30">
-                    <span className="text-xs font-medium text-yellow-300">
-                      ⏸️ Máquina Parada
-            </span>
-                    <div className="text-xs mt-1 text-yellow-200">
-                      Parada já justificada: {justifiedStopReason}
-                    </div>
-                    <div className="text-xs mt-1 text-yellow-300/80">
-                      Aguarde a máquina voltar a funcionar para pré-justificar próxima parada
-                    </div>
-                  </div>
-                )}
-              </div>
-              
-            {pendingStops > 0 && (
-              <span className={`
-                  absolute bg-red-500 text-white text-sm font-bold rounded-full min-w-[24px] h-6 px-2
-                  flex items-center justify-center shadow-lg
-                  ${isCollapsed ? '-top-2 -right-2' : 'top-2 right-3'}
-                  animate-pulse
-              `}>
-                {pendingStops > 99 ? '99+' : pendingStops}
-              </span>
-            )}
-              
-              {justifiedStopReason === 'Parada não justificada' && (
-                <span className={`
-                  absolute bg-orange-500 text-white text-sm font-bold rounded-full min-w-[24px] h-6 px-2
-                  flex items-center justify-center shadow-lg
-                  ${isCollapsed ? '-top-2 -right-2' : 'top-2 right-3'}
-                  animate-pulse
-                `}>
-                  !
-              </span>
-            )}
-          </button>
-          )}
 
                 {/* Botão Informar Parada - só mostrar quando NÃO há parada em andamento E máquina está funcionando */}
                 {pendingStops === 0 && justifiedStopReason !== 'Parada não justificada' && canPreJustify && (

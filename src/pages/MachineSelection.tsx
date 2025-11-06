@@ -206,33 +206,14 @@ export function MachineSelection({ initialMachine, onShowSettings, secondaryOper
   };
 
   // Verificar modo admin ANTES de qualquer criação de sessão
+  // ✅ Modo admin agora é detectado apenas pelo PIN 5777 no login (API REST)
   useEffect(() => {
     const checkAdminMode = async () => {
       try {
         const { data: { user } } = await supabase.auth.getUser();
         if (user) {
-          // Buscar o operador associado ao usuário
-          const { data: operatorData, error: operatorError } = await supabase
-            .from('operador')
-            .select('id')
-            .eq('user', user.id)
-            .eq('Delete', false)
-            .single();
-
-          if (!operatorError && operatorData) {
-            // Verificar se este operador tem o PIN 5777
-            const { data: fastAccessData, error: fastAccessError } = await supabase
-              .from('operator_fast_acess')
-              .select('PIN')
-              .eq('operador', operatorData.id)
-              .eq('PIN', 5777)
-              .single();
-
-            if (!fastAccessError && fastAccessData) {
-              console.log('Modo admin detectado ANTES da verificação de sessão');
-              setIsAdminMode(true);
-            }
-          }
+          console.log('Modo admin (Supabase auth) detectado');
+          setIsAdminMode(true);
         }
       } catch (err) {
         console.error('Erro ao verificar modo admin:', err);
@@ -242,105 +223,15 @@ export function MachineSelection({ initialMachine, onShowSettings, secondaryOper
     checkAdminMode();
   }, []); // Executar apenas uma vez ao montar o componente
 
-  // Verificar sessão ativa APENAS se não for modo admin
-  useEffect(() => {
-    // Se ainda não verificou o modo admin, aguardar
-    if (isAdminMode === undefined) {
-      console.log('Aguardando verificação de modo admin...');
-      return;
-    }
-
-    const checkActiveSession = async () => {
-      console.log('=== checkActiveSession executando ===');
-      console.log('isAdminMode:', isAdminMode);
-      console.log('operatorId:', operatorId);
-      
-      // Se for modo admin, não verificar sessão
-      if (isAdminMode) {
-        console.log('Modo admin ativo - pulando verificação de sessão COMPLETAMENTE');
-        return;
-      }
-
-      console.log('Modo normal - verificando sessão ativa...');
-
-      // Se não for admin, verificar se há operatorId
-      if (!operatorId) {
-        console.log('Sem operatorId - aguardando...');
-        return;
-      }
-
-      try {
-        // Verificar se há sessão ativa para este operador
-        const { data: sessions, error } = await supabase
-          .from('sessoes')
-          .select('id, created_at, maquina, operador, inicio, fim, turno')
-          .eq('operador', operatorId)
-          .is('fim', null)
-          .order('created_at', { ascending: false })
-          .limit(1);
-
-        if (error) {
-          console.error('Erro ao verificar sessão ativa:', error);
-          return;
-        }
-
-        if (!sessions || sessions.length === 0) {
-          // Não há sessão ativa, deslogar automaticamente
-          console.log('Nenhuma sessão ativa encontrada, deslogando automaticamente...');
-          await supabase.auth.signOut();
-          window.location.reload();
-        } else {
-          const session = sessions[0];
-          console.log('Sessão ativa encontrada no banco:', session);
-          setSessionId(session.id);
-          localStorage.setItem('industrack_session', session.id.toString());
-        }
-      } catch (err) {
-        console.error('Erro ao verificar sessão ativa:', err);
-      }
-    };
-
-    checkActiveSession();
-  }, [isAdminMode, operatorId]); // Executar quando isAdminMode ou operatorId mudar
+  // ✅ Sessões agora são gerenciadas via API REST, não precisamos verificar no Supabase
 
   // ✅ NOVO: Usar dados do operador da API REST
   useEffect(() => {
     if (operator) {
       console.log('✅ Usando operador da API REST:', operator);
       setOperatorId(operator.id_operador);
-    } else {
-      // ⚠️ Fallback para modo admin (Supabase)
-      async function loadOperatorFromSupabase() {
-        if (!user) return;
-        
-        try {
-          console.log('⚠️ Fallback: Buscando operador no Supabase para usuário:', user.id);
-          const { data, error } = await supabase
-            .from('operador')
-            .select('id')
-            .eq('user', user.id)
-            .eq('Delete', false)
-            .single();
-
-          if (error) {
-            console.error('Erro ao buscar operador:', error);
-            throw error;
-          }
-          
-          if (data) {
-            setOperatorId(data.id);
-          } else {
-            console.log('Nenhum operador encontrado para o usuário');
-          }
-        } catch (err) {
-          console.error('Error loading operator:', err);
-          setSelectionError('Erro ao carregar operador');
-        }
-      }
-
-      loadOperatorFromSupabase();
     }
-  }, [operator, user]);
+  }, [operator]);
 
   // Carregar máquinas e definir última máquina usada
   useEffect(() => {
@@ -376,44 +267,9 @@ export function MachineSelection({ initialMachine, onShowSettings, secondaryOper
       return; // Retorna aqui, permitindo que o dashboard seja renderizado
     }
 
-    // Verificar se já existe uma sessão ativa para este operador e máquina
-    if (operatorId) {
-      try {
-        const { data: sessions, error } = await supabase
-          .from('sessoes')
-          .select('id, created_at, maquina, operador, inicio, fim, turno')
-          .eq('operador', operatorId)
-          .eq('maquina', machine.id_maquina)
-          .is('fim', null)
-          .order('created_at', { ascending: false })
-          .limit(1);
-
-        if (error) {
-          console.error('Erro ao verificar sessão ativa:', error);
-          setSelectionError('Erro ao verificar sessão ativa.');
-          setLoadingSession(false);
-          return;
-        }
-
-        if (sessions && sessions.length > 0) {
-          const session = sessions[0];
-          console.log('Sessão ativa encontrada no banco:', session);
-          setSessionId(session.id);
-          localStorage.setItem('industrack_session', session.id.toString());
-        } else {
-          console.log('Nenhuma sessão ativa encontrada no banco - aguardando criação pelo OperatorDashboard');
-          // NÃO criar sessão aqui - deixar o OperatorDashboard fazer isso
-          // Apenas aguardar que uma sessão seja criada automaticamente
-        }
-      } catch (err) {
-        console.error('Erro ao selecionar máquina e verificar sessão:', err);
-        setSelectionError('Erro ao verificar sessão.');
-      } finally {
-        setLoadingSession(false);
-      }
-      } else {
-      setLoadingSession(false);
-    }
+    // ✅ Sessões agora são gerenciadas via API REST no OperatorDashboard
+    console.log('Máquina selecionada - sessão será gerenciada via API REST');
+    setLoadingSession(false);
   };
 
   // Show dashboard if machine is selected

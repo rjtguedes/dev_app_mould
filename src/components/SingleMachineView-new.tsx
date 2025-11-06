@@ -24,9 +24,6 @@ export function SingleMachineViewNew({
   const [confirming, setConfirming] = useState<boolean>(false);
   const [confirmMessage, setConfirmMessage] = useState<string | null>(null);
 
-  console.log('[SingleMachineViewNew] Machine data:', machineData);
-  console.log('[SingleMachineViewNew] Contexto ativo:', contextoAtivo);
-
   if (!machineData) {
     return (
       <div className="overflow-x-auto bg-black/20 rounded-xl border border-white/30 shadow-xl backdrop-blur-sm">
@@ -44,9 +41,6 @@ export function SingleMachineViewNew({
   
   // Estrutura do backend: pode vir com ou sem 'contexto' wrapper
   const dadosBackend = (machineData as any)?.contexto ?? machineData as any;
-  
-  console.log('[SingleMachineViewNew] Dados completos recebidos:', machineData);
-  console.log('[SingleMachineViewNew] Dados extraídos:', dadosBackend);
   
   // Extrair dados básicos da máquina
   const id = dadosBackend?.id_maquina ?? dadosBackend?.id ?? 69;
@@ -73,13 +67,6 @@ export function SingleMachineViewNew({
       rejeitos: src.rejeitos ?? 0
     };
   }, [sessao_operador_raw, estatisticas, producao_turno]);
-  
-  console.log('[SingleMachineViewNew] Contextos extraídos:', {
-    sessao_operador,
-    producao_turno,
-    producao_mapa,
-    contexto_ativo: contextoAtivo
-  });
 
   // ✅ Selecionar contexto para exibir (usar fallbacks quando necessário)
   let dadosExibicao: any = null;
@@ -114,17 +101,6 @@ export function SingleMachineViewNew({
   const isStopped = parada_ativa !== null || status === false;
   const isActive = !isStopped;
   const hasSession = !!sessao_operador;
-
-  console.log('[SingleMachineViewNew] Valores finais (todos do backend, sem cálculo):', {
-    contexto_ativo: contextoAtivo,
-    sinaisValidos,
-    rejeitos,
-    sinais,
-    qtProduzir,
-    saldo,
-    status,
-    parada_ativa
-  });
 
   // Função para adicionar rejeito via API
   const handleAddRejeito = async () => {
