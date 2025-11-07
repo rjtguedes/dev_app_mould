@@ -2,12 +2,70 @@ import { useEffect, useRef } from 'react';
 
 export function useWakeLock() {
   const wakeLockRef = useRef<WakeLockSentinel | null>(null);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const useFallback = useRef<boolean>(false);
 
+  // Função para criar e ativar vídeo invisível (fallback para navegadores sem Wake Lock API)
+  const enableVideoFallback = () => {
+    if (videoRef.current) return; // Já existe
+
+    console.log('🎥 Ativando fallback com vídeo invisível...');
+
+    // Criar vídeo invisível
+    const video = document.createElement('video');
+    video.setAttribute('title', 'NoSleep');
+    video.setAttribute('playsinline', '');
+    video.setAttribute('muted', '');
+    video.setAttribute('loop', '');
+    video.style.position = 'fixed';
+    video.style.left = '-100%';
+    video.style.top = '-100%';
+    video.style.width = '1px';
+    video.style.height = '1px';
+    video.style.opacity = '0.01';
+    video.style.pointerEvents = 'none';
+
+    // Vídeo em base64 (WebM vazio de 1 segundo)
+    const webmData = 'data:video/webm;base64,GkXfo59ChoEBQveBAULygQRC84EIQoKEd2VibUKHgQRChYECGFOAZwH/////////FUmpZpkq17GDD0JATYCGQ2hyb21lV0GGQ2hyb21lFlSua7+uvdeBAXPFh1WGQ2hyb29tZWVLgYB3ZWJtYWRrV0GGQ2hyb21lV0GGQ2hyb2mBlSIBFiEBAQoYDCkBAVSub7////////w8AQAAAGAAAABj1WGQVSAQAd/////AwAAAAAAABP1WGQVSAQAf/////jAAAAUV1BUGGrldBl0BPQAAAAAAJVgBAVSub//////////AQAABP1WGQVSAQAAAAAA////////nAAAABTUEAYbsFVwBAVSub/////////+DAAAAAAAFFQQBhuwVXAEBVK5v//////////0AAAAAU1BAGG7BVcAQFUrm/////////+cAAAAABRYEAY';
+
+    video.src = webmData;
+    
+    document.body.appendChild(video);
+    videoRef.current = video;
+
+    // Tentar reproduzir o vídeo
+    video.play()
+      .then(() => {
+        console.log('✅ Vídeo fallback ativado - tela permanecerá ligada');
+      })
+      .catch((err) => {
+        console.error('❌ Erro ao ativar vídeo fallback:', err);
+      });
+  };
+
+  // Função para desativar vídeo fallback
+  const disableVideoFallback = () => {
+    if (videoRef.current) {
+      videoRef.current.pause();
+      videoRef.current.remove();
+      videoRef.current = null;
+      console.log('🛑 Vídeo fallback desativado');
+    }
+  };
+
+  // Função para tentar usar Wake Lock API
   const acquireWakeLock = async () => {
+    // Se já está usando fallback, não tentar Wake Lock
+    if (useFallback.current) {
+      return null;
+    }
+
     try {
       // Verificar se Wake Lock API está disponível
       if (!('wakeLock' in navigator)) {
-        console.warn('⚠️ Wake Lock API não suportada neste navegador');
+        console.warn('⚠️ Wake Lock API não suportada - usando fallback');
+        useFallback.current = true;
+        enableVideoFallback();
         return null;
       }
 
@@ -31,7 +89,7 @@ export function useWakeLock() {
       const wakeLock = await navigator.wakeLock.request('screen');
       wakeLockRef.current = wakeLock;
       
-      console.log('✅ Wake Lock ativado - tela permanecerá ligada');
+      console.log('✅ Wake Lock API ativado - tela permanecerá ligada');
 
       // Listener para quando o wake lock for liberado
       wakeLock.addEventListener('release', () => {
@@ -48,12 +106,10 @@ export function useWakeLock() {
       return wakeLock;
     } catch (err: any) {
       console.error('❌ Erro ao requisitar Wake Lock:', err?.message || err);
-      // Se falhar, tentar novamente em 5 segundos
-      setTimeout(() => {
-        if (document.visibilityState === 'visible') {
-          acquireWakeLock();
-        }
-      }, 5000);
+      // Se falhar, usar fallback
+      console.log('🔄 Mudando para fallback com vídeo...');
+      useFallback.current = true;
+      enableVideoFallback();
       return null;
     }
   };
@@ -65,9 +121,16 @@ export function useWakeLock() {
     const handleVisibilityChange = async () => {
       if (document.visibilityState === 'visible') {
         console.log('👀 Página visível - ativando Wake Lock');
-        await acquireWakeLock();
+        if (useFallback.current) {
+          enableVideoFallback();
+        } else {
+          await acquireWakeLock();
+        }
       } else {
         console.log('🙈 Página oculta - Wake Lock será liberado automaticamente');
+        if (useFallback.current) {
+          disableVideoFallback();
+        }
       }
     };
 
@@ -79,9 +142,14 @@ export function useWakeLock() {
 
     // Tentar manter wake lock ativo a cada 30 segundos (redundância)
     const keepAliveInterval = setInterval(() => {
-      if (document.visibilityState === 'visible' && !wakeLockRef.current) {
-        console.log('🔄 Verificação periódica - reativando Wake Lock');
-        acquireWakeLock();
+      if (document.visibilityState === 'visible') {
+        if (useFallback.current && !videoRef.current) {
+          console.log('🔄 Verificação periódica - reativando fallback');
+          enableVideoFallback();
+        } else if (!useFallback.current && !wakeLockRef.current) {
+          console.log('🔄 Verificação periódica - reativando Wake Lock');
+          acquireWakeLock();
+        }
       }
     }, 30000);
 
@@ -95,6 +163,8 @@ export function useWakeLock() {
         wakeLockRef.current.release().catch(console.debug);
         wakeLockRef.current = null;
       }
+      
+      disableVideoFallback();
     };
   }, []);
 

@@ -64,7 +64,7 @@ function App() {
   }, []);
 
   useEffect(() => {
-    // ✅ NOVO: Inicialização com verificação de sessão salva
+    // ✅ SIMPLIFICADO: useAuth já verifica e restaura sessão automaticamente
     const initializeApp = async () => {
       try {
         console.log('🚀 Inicializando aplicação...');
@@ -83,40 +83,15 @@ function App() {
           return;
         }
 
-        // ✅ NOVO: Verificar se há sessão ativa salva (para modo operador)
-        const savedSession = checkSavedSession();
-        if (savedSession) {
-          console.log('✅ Sessão ativa encontrada, validando e restaurando...');
-          
-          // Carregar máquina salva
-          const savedMachine = machineStorage.getCurrentMachine();
-          
-          // ✅ Validar se máquina e sessão são compatíveis
-          if (savedMachine && savedMachine.id_maquina === savedSession.id_maquina) {
-            console.log('✅ Máquina válida para sessão:', savedMachine.nome);
-            setCurrentMachine(savedMachine);
-            
-            // ✅ Restaurar estado de autenticação
-            const restored = restoreSession(savedSession);
-            if (restored) {
-              console.log('✅ Autenticação restaurada - indo direto para dashboard');
-            } else {
-              console.error('❌ Falha ao restaurar autenticação');
-              clearAllLocalData();
-              setCurrentMachine(null);
-            }
-          } else {
-            console.warn('⚠️ Máquina incompatível com sessão salva - limpando dados');
-            // Limpar TODOS os dados inválidos
-            clearAllLocalData();
-            setCurrentMachine(null);
-          }
+        // ✅ Carregar máquina salva (useAuth já restaura a autenticação)
+        const savedMachine = machineStorage.getCurrentMachine();
+        if (savedMachine) {
+          console.log('✅ Máquina salva encontrada:', savedMachine.nome);
+          setCurrentMachine(savedMachine);
         } else {
-          // Sem sessão ativa válida - limpar máquina também para forçar novo login
-          console.log('📋 Nenhuma sessão ativa válida - limpando máquina salva');
-          localStorage.removeItem('industrack_current_machine');
-          setCurrentMachine(null);
+          console.log('📋 Nenhuma máquina salva encontrada');
         }
+        
       } catch (error) {
         console.error('❌ Erro na inicialização:', error);
       } finally {
@@ -378,7 +353,8 @@ function App() {
     );
   }
 
-  if (initialLoading) {
+  // ✅ Aguardar tanto o useAuth quanto a inicialização do App
+  if (initialLoading || isLoading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-blue-600 to-blue-900 flex items-center justify-center">
         <div className="flex items-center gap-3 text-white">
