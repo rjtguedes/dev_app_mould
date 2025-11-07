@@ -28,10 +28,10 @@ export function useWakeLock() {
       video.style.opacity = '0.01';
       video.style.pointerEvents = 'none';
 
-      // Vídeo em base64 (WebM vazio de 1 segundo)
-      const webmData = 'data:video/webm;base64,GkXfo59ChoEBQveBAULygQRC84EIQoKEd2VibUKHgQRChYECGFOAZwH/////////FUmpZpkq17GDD0JATYCGQ2hyb21lV0GGQ2hyb21lFlSua7+uvdeBAXPFh1WGQ2hyb29tZWVLgYB3ZWJtYWRrV0GGQ2hyb21lV0GGQ2hyb2mBlSIBFiEBAQoYDCkBAVSub7////////w8AQAAAGAAAABj1WGQVSAQAd/////AwAAAAAAABP1WGQVSAQAf/////jAAAAUV1BUGGrldBl0BPQAAAAAAJVgBAVSub//////////AQAABP1WGQVSAQAAAAAA////////nAAAABTUEAYbsFVwBAVSub/////////+DAAAAAAAFFQQBhuwVXAEBVK5v//////////0AAAAAU1BAGG7BVcAQFUrm/////////+cAAAAABRYEAY';
+      // MP4 em base64 (vídeo vazio de 1 segundo - melhor compatibilidade)
+      const mp4Data = 'data:video/mp4;base64,AAAAIGZ0eXBpc29tAAACAGlzb21pc28yYXZjMW1wNDEAAAAIZnJlZQAAAu1tZGF0AAACrgYF//+q3EXpvebZSLeWLNgg2SPu73gyNjQgLSBjb3JlIDE0OCByMjc0MyA1Yzg1ZTBlIC0gSC4yNjQvTVBFRy00IEFWQyBjb2RlYyAtIENvcHlsZWZ0IDIwMDMtMjAxNSAtIGh0dHA6Ly93d3cudmlkZW9sYW4ub3JnL3gyNjQuaHRtbCAtIG9wdGlvbnM6IGNhYmFjPTEgcmVmPTMgZGVibG9jaz0xOjA6MCBhbmFseXNlPTB4MzoweDExMyBtZT1oZXggc3VibWU9NyBwc3k9MSBwc3lfcmQ9MS4wMDowLjAwIG1peGVkX3JlZj0xIG1lX3JhbmdlPTE2IGNocm9tYV9tZT0xIHRyZWxsaXM9MSA4eDhkY3Q9MSBjcW09MCBkZWFkem9uZT0yMSwxMSBmYXN0X3Bza2lwPTEgY2hyb21hX3FwX29mZnNldD0tMiB0aHJlYWRzPTMgbG9va2FoZWFkX3RocmVhZHM9MSBzbGljZWRfdGhyZWFkcz0wIG5yPTAgZGVjaW1hdGU9MSBpbnRlcmxhY2VkPTAgYmx1cmF5X2NvbXBhdD0wIGNvbnN0cmFpbmVkX2ludHJhPTAgYmZyYW1lcz0zIGJfcHlyYW1pZD0yIGJfYWRhcHQ9MSBiX2JpYXM9MCBkaXJlY3Q9MSB3ZWlnaHRiPTEgb3Blbl9nb3A9MCB3ZWlnaHRwPTIga2V5aW50PTI1MCBrZXlpbnRfbWluPTEgc2NlbmVjdXQ9NDAgaW50cmFfcmVmcmVzaD0wIHJjX2xvb2thaGVhZD00MCByYz1jcmYgbWJ0cmVlPTEgY3JmPTI4LjAgcWNvbXA9MC42MCBxcG1pbj0wIHFwbWF4PTY5IHFwc3RlcD00IGlwX3JhdGlvPTEuNDAgYXE9MToxLjAwAIAAAAARZYiEACD/2lu4PtiAGCZiIAAAAwRBmiQAX/+64b7gAB3CAANzgQgeqL/+i8lEAAAAA0GaJABf/6f+gAB3CAAAAwRBmiQAX/+n/oAAd4AAADJQZpoAF//6MsEV8AAAABxBmmgAX/+n/oAAd4EAAAAcQZ5oAF//p/6AAAADG0GeaABf/6f+gAA3gAAAAxtBnoQAX/+n/oAANZkAAAAYQZ6kAF//p/6AAAACR0GapABf/6f+gAACf0wAAAAcQZ7EAF//p/6AAAJZTAAAAB0GexgAX/+n/oAAAltEAAAAHEGe5gBf/6f+gAACS0QAAAACAG00ZXRhAAAAAAAAACFoZGxyAAAAAAAAAABtZGlyYXBwbAAAAAAAAAAAAAAAAC1pbHN0AAAAJal0b28AAAAdZGF0YQAAAAEAAAAATGF2ZjU2LjQwLjEwMQ==';
 
-      video.src = webmData;
+      video.src = mp4Data;
       document.body.appendChild(video);
       videoRef.current = video;
     }
@@ -49,7 +49,35 @@ export function useWakeLock() {
       console.log('✅ Vídeo fallback ativado - tela permanecerá ligada');
     } catch (err) {
       console.error('❌ Erro ao ativar vídeo fallback:', err);
-      fallbackEnabled.current = false;
+      
+      // Tentar abordagem alternativa com áudio silencioso
+      console.log('🔊 Tentando fallback com áudio silencioso...');
+      try {
+        const audio = document.createElement('audio');
+        audio.setAttribute('loop', '');
+        audio.style.display = 'none';
+        
+        // Áudio silencioso em base64 (MP3 vazio)
+        const silentAudio = 'data:audio/mp3;base64,//uQxAAAAAAAAAAAAAAAAAAAAAAASW5mbwAAAA8AAAACAAABhgC7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7//////////////////////////////////////////////////////////////////8AAAA5TEFNRTMuMTAwAZYAAAAAAAAAABQ4JAMGQgAAOAAABYZMTEFNRTMuMTAwVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVV//sUxAAADEABOCc0gAIAAA0gAAAABAQBAUExQSGDwIA8GBwOB+f/Ig4Ghg4PA/+fgw+DAPg4ODgYB8H/w4GAf/gYB4HAYBwOBwOBw//8xIEAf/g4B4OAf/g4ODgH/w4OA//5xIEASCgkBASCQkBASDg4JB/84OAf/g4H/84P///84B///5wD///OAf///OD///+f///////w';
+        
+        audio.src = silentAudio;
+        document.body.appendChild(audio);
+        
+        await audio.play();
+        
+        // Substituir videoRef por audioRef para limpeza posterior
+        if (videoRef.current) {
+          videoRef.current.remove();
+        }
+        videoRef.current = audio as any;
+        fallbackEnabled.current = true;
+        console.log('✅ Áudio fallback ativado - tela permanecerá ligada');
+      } catch (audioErr) {
+        console.error('❌ Fallback com áudio também falhou:', audioErr);
+        console.warn('⚠️ Não foi possível manter a tela ativa automaticamente');
+        console.warn('💡 Dica: Verifique as configurações do navegador ou use HTTPS');
+        fallbackEnabled.current = false;
+      }
     }
   };
 
@@ -78,7 +106,8 @@ export function useWakeLock() {
     try {
       // Verificar se Wake Lock API está disponível
       if (!('wakeLock' in navigator)) {
-        console.warn('⚠️ Wake Lock API não suportada - usando fallback');
+        console.warn('⚠️ Wake Lock API não suportada neste navegador');
+        console.info('ℹ️ PWA em HTTP - usando fallback automático');
         useFallback.current = true;
         enableVideoFallback();
         return null;
@@ -120,9 +149,16 @@ export function useWakeLock() {
 
       return wakeLock;
     } catch (err: any) {
-      console.error('❌ Erro ao requisitar Wake Lock:', err?.message || err);
-      // Se falhar, usar fallback
-      console.log('🔄 Mudando para fallback com vídeo...');
+      // Wake Lock falhou (comum em HTTP)
+      const errorMsg = err?.message || err;
+      console.warn('⚠️ Wake Lock não disponível:', errorMsg);
+      
+      // Verificar se é problema de contexto seguro (HTTP)
+      if (errorMsg.includes('secure') || errorMsg.includes('https')) {
+        console.info('ℹ️ Wake Lock requer HTTPS - usando fallback para HTTP');
+      }
+      
+      // Usar fallback
       useFallback.current = true;
       enableVideoFallback();
       return null;

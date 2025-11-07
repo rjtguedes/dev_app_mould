@@ -26,86 +26,50 @@ export function useAuth() {
     error: ''
   });
 
-  // ✅ NOVO: Auto-restaurar sessão na inicialização do hook
+  // ✅ SIMPLIFICADO: Auto-restaurar sessão na inicialização do hook
   useEffect(() => {
-    console.log('🔐 useAuth: Verificando sessão salva na inicialização...');
+    console.log('🔐 useAuth: Verificando sessão ativa na inicialização...');
     
     const autoRestoreSession = () => {
       try {
-        const savedSessionStr = localStorage.getItem('industrack_active_session');
-        if (!savedSessionStr) {
-          console.log('📋 Nenhuma sessão salva encontrada - isLoading = false');
+        // ✅ NOVO: Sistema simplificado - apenas 2 campos
+        const id_sessao = localStorage.getItem('id_sessao');
+        const sessao_ativa = localStorage.getItem('sessao_ativa');
+        
+        console.log('📋 Dados da sessão:', { id_sessao, sessao_ativa });
+        
+        if (!id_sessao || sessao_ativa !== 'true') {
+          console.log('📋 Nenhuma sessão ativa encontrada - redirecionando para login');
           setAuthState(prev => ({ ...prev, isLoading: false }));
           return;
         }
 
-        const savedSession = JSON.parse(savedSessionStr);
-        console.log('🔍 Sessão salva encontrada:', savedSession);
+        console.log('✅ Sessão ativa encontrada - ID:', id_sessao);
+        console.log('🔄 Restaurando autenticação...');
 
-        // Verificar se a sessão não está muito antiga (mais de 24 horas sem uso)
-        const sessionAge = Date.now() - (savedSession.timestamp || 0);
-        const maxAge = 24 * 60 * 60 * 1000; // 24 horas em ms
-        
-        if (sessionAge > maxAge) {
-          console.log('⏰ Sessão salva expirada, removendo...');
-          localStorage.removeItem('industrack_active_session');
-          setAuthState(prev => ({ ...prev, isLoading: false }));
-          return;
-        }
-
-        // Restaurar sessão automaticamente
-        console.log('✅ Restaurando sessão automaticamente:', savedSession.id_sessao);
-        
-        const restoredOperator = {
-          id_operador: savedSession.id_operador,
-          nome: savedSession.nome_operador || 'Operador',
-          empresa: savedSession.empresa || 0,
-          sessao: savedSession.id_sessao ? {
-            id_sessao: savedSession.id_sessao,
-            id_maquina: savedSession.id_maquina,
-            id_operador: savedSession.id_operador
-          } : undefined
-        };
-
+        // Restaurar estado de autenticação
         setAuthState({
           isAuthenticated: true,
-          operator: restoredOperator,
-          secondaryOperator: savedSession.operador_secundario || null,
+          operator: {
+            id_operador: 0, // Será atualizado pelo SSE
+            nome: 'Operador', // Será atualizado pelo SSE
+            empresa: 0
+          },
+          secondaryOperator: null,
           isLoading: false,
           error: ''
         });
 
-        // ✅ Renovar timestamp da sessão para manter ativa
-        savedSession.timestamp = Date.now();
-        localStorage.setItem('industrack_active_session', JSON.stringify(savedSession));
-        console.log('✅ Sessão restaurada automaticamente com sucesso (timestamp renovado)');
+        console.log('✅ Sessão restaurada com sucesso - ID:', id_sessao);
       } catch (error) {
-        console.error('❌ Erro ao auto-restaurar sessão:', error);
-        localStorage.removeItem('industrack_active_session');
+        console.error('❌ Erro ao restaurar sessão:', error);
+        localStorage.removeItem('id_sessao');
+        localStorage.removeItem('sessao_ativa');
         setAuthState(prev => ({ ...prev, isLoading: false }));
       }
     };
 
     autoRestoreSession();
-    
-    // ✅ Renovar timestamp periodicamente para manter sessão ativa
-    const renewInterval = setInterval(() => {
-      const savedSessionStr = localStorage.getItem('industrack_active_session');
-      if (savedSessionStr) {
-        try {
-          const savedSession = JSON.parse(savedSessionStr);
-          savedSession.timestamp = Date.now();
-          localStorage.setItem('industrack_active_session', JSON.stringify(savedSession));
-          console.log('🕒 Timestamp da sessão renovado automaticamente');
-        } catch (error) {
-          console.error('❌ Erro ao renovar timestamp:', error);
-        }
-      }
-    }, 5 * 60 * 1000); // Renovar a cada 5 minutos
-
-    return () => {
-      clearInterval(renewInterval);
-    };
   }, []); // Executar apenas uma vez na montagem
 
   const login = async ({ pin, twoOperators = false, id_maquina }: LoginParams) => {
@@ -157,6 +121,9 @@ export function useAuth() {
       }
 
       console.log('✅ Login principal realizado:', response.data);
+      console.log('🔍 Dados da sessão retornados:', response.data.sessao);
+      console.log('🔍 response.data.sessao existe?', !!response.data.sessao);
+      console.log('🔍 response.data.sessao.id_sessao:', response.data.sessao?.id_sessao);
 
       let secondaryOperatorData: { id: number; nome: string } | null = null;
 
@@ -187,38 +154,27 @@ export function useAuth() {
         }
       }
 
-      // ✅ Persistência da sessão: se backend retornar sessão
-      if (response.data.sessao?.id_sessao) {
-        const newSession = {
-          id_sessao: response.data.sessao.id_sessao,
-          id_maquina: response.data.sessao.id_maquina,
-          id_operador: response.data.sessao.id_operador,
-          nome_operador: response.data.nome, // ✅ Salvar nome do operador
-          empresa: response.data.empresa, // ✅ Salvar empresa
-          operador_secundario: secondaryOperatorData, // ✅ Salvar operador secundário se houver
-          timestamp: Date.now()
-        };
-
-        // Se já existe sessão salva da mesma máquina, apenas renova timestamp e atualiza dados
-        if (savedSession && savedSession.id_maquina === newSession.id_maquina) {
-          const merged = { 
-            ...newSession, // ✅ Atualizar todos os dados, não só timestamp
-            timestamp: Date.now() 
-          };
-          localStorage.setItem('industrack_active_session', JSON.stringify(merged));
-          console.log('🕒 Sessão existente encontrada - dados atualizados e timestamp renovado');
-        } else if (!savedSession) {
-          localStorage.setItem('industrack_active_session', JSON.stringify(newSession));
-          console.log('💾 Sessão salva no localStorage:', newSession.id_sessao);
-        } else {
-          // Existe sessão de outra máquina: sobrescrever apenas se id_maquina do request foi enviado
-          if (!shouldOmitMachineId) {
-            localStorage.setItem('industrack_active_session', JSON.stringify(newSession));
-            console.log('🔄 Sessão substituída no localStorage (máquina diferente)');
-          } else {
-            console.log('⚠️ Mantendo sessão existente (máquina diferente, mas login sem id_maquina)');
-          }
-        }
+      // ✅ SIMPLIFICADO: Salvar apenas ID da sessão e flag ativa
+      console.log('🔍 Verificando se deve salvar sessão...');
+      console.log('🔍 response.data:', response.data);
+      
+      // Pode vir em response.data.sessao OU direto no response.data
+      const sessionId = response.data.sessao?.id_sessao || response.data.id_sessao;
+      
+      if (sessionId) {
+        console.log('✅ Sessão recebida do backend - ID:', sessionId);
+        
+        // ✅ NOVO: Sistema simplificado - apenas 2 campos
+        localStorage.setItem('id_sessao', String(sessionId));
+        localStorage.setItem('sessao_ativa', 'true');
+        
+        console.log('💾 Sessão salva no localStorage:', {
+          id_sessao: sessionId,
+          sessao_ativa: true
+        });
+      } else {
+        console.warn('⚠️ Backend não retornou ID de sessão');
+        console.warn('⚠️ Verifique response.data:', response.data);
       }
 
       // Sucesso - atualizar estado
@@ -265,97 +221,21 @@ export function useAuth() {
       error: ''
     });
     
-    // ✅ Limpar dados da sessão (novo e antigo)
-    console.log('🧹 Limpando dados de sessão do localStorage...');
+    // ✅ SIMPLIFICADO: Limpar apenas os campos necessários
+    console.log('🧹 Limpando sessão do localStorage...');
+    localStorage.removeItem('id_sessao');
+    localStorage.removeItem('sessao_ativa');
+    
+    // ✅ Limpar chaves antigas (limpeza)
     localStorage.removeItem('industrack_session');
     localStorage.removeItem('industrack_active_session');
     
-    // ✅ OPCIONAL: Limpar também máquina e produção (depende do fluxo desejado)
-    // localStorage.removeItem('industrack_current_machine');
-    // localStorage.removeItem('industrack_current_production');
-    
-    console.log('✅ Logout completo - sessão limpa');
-  };
-
-  // ✅ NOVO: Verificar se há sessão salva e restaurar autenticação
-  const checkSavedSession = () => {
-    try {
-      const savedSessionStr = localStorage.getItem('industrack_active_session');
-      if (!savedSessionStr) {
-        console.log('📋 Nenhuma sessão salva encontrada');
-        return null;
-      }
-
-      const savedSession = JSON.parse(savedSessionStr);
-      console.log('🔍 Sessão salva encontrada:', savedSession);
-
-      // Verificar se a sessão não está muito antiga (mais de 24 horas sem uso)
-      const sessionAge = Date.now() - (savedSession.timestamp || 0);
-      const maxAge = 24 * 60 * 60 * 1000; // 24 horas em ms
-      
-      if (sessionAge > maxAge) {
-        console.log('⏰ Sessão salva expirada, removendo...');
-        localStorage.removeItem('industrack_active_session');
-        return null;
-      }
-
-      return savedSession;
-    } catch (error) {
-      console.error('❌ Erro ao verificar sessão salva:', error);
-      localStorage.removeItem('industrack_active_session');
-      return null;
-    }
-  };
-
-  // ✅ NOVO: Função para limpar todos os dados locais
-  const clearAllLocalData = () => {
-    console.log('🧹 Limpando TODOS os dados locais...');
-    try {
-      localStorage.removeItem('industrack_active_session');
-      localStorage.removeItem('industrack_current_machine');
-      localStorage.removeItem('industrack_current_production');
-      localStorage.removeItem('industrack_machines_list');
-      localStorage.removeItem('industrack_machines_last_update');
-      console.log('✅ Todos os dados locais foram limpos');
-    } catch (error) {
-      console.error('❌ Erro ao limpar dados locais:', error);
-    }
-  };
-
-  // ✅ NOVO: Restaurar sessão salva e atualizar estado de autenticação
-  const restoreSession = (savedSession: any) => {
-    try {
-      console.log('🔄 Restaurando estado de autenticação da sessão:', savedSession.id_sessao);
-      
-      // Criar objeto de operador baseado na sessão salva
-      const restoredOperator = {
-        id_operador: savedSession.id_operador,
-        nome: 'Operador', // Nome será atualizado quando conectar ao backend
-        empresa: 0
-      };
-
-      setAuthState({
-        isAuthenticated: true,
-        operator: restoredOperator,
-        secondaryOperator: null,
-        isLoading: false,
-        error: ''
-      });
-
-      console.log('✅ Sessão restaurada com sucesso');
-      return true;
-    } catch (error) {
-      console.error('❌ Erro ao restaurar sessão:', error);
-      return false;
-    }
+    console.log('✅ Logout completo - sessão encerrada');
   };
 
   return {
     ...authState,
     login,
-    logout,
-    checkSavedSession,
-    restoreSession,
-    clearAllLocalData
+    logout
   };
 }

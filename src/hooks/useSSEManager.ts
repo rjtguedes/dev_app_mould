@@ -20,15 +20,11 @@ function saveSessaoToLocalStorage(sessao: any, id_maquina: number) {
   if (!sessao || !sessao.id_sessao) return;
   
   try {
-    const sessionData = {
-      id_sessao: sessao.id_sessao,
-      id_operador: sessao.id_operador,
-      id_maquina: id_maquina,
-      timestamp: Date.now()
-    };
+    // ✅ SIMPLIFICADO: Salvar apenas ID e flag ativa
+    localStorage.setItem('id_sessao', String(sessao.id_sessao));
+    localStorage.setItem('sessao_ativa', 'true');
     
-    localStorage.setItem('industrack_active_session', JSON.stringify(sessionData));
-    console.log('💾 Sessão salva no localStorage (via SSE):', sessionData.id_sessao);
+    console.log('💾 Sessão salva no localStorage (via SSE) - ID:', sessao.id_sessao);
   } catch (error) {
     console.error('❌ Erro ao salvar sessão no localStorage:', error);
   }
@@ -943,9 +939,9 @@ export function useSSEManager(options: SSEManagerOptions) {
       const normalizedContext = {
         id_maquina: contextUpdate.id || targetMachineId,
         nome: contextUpdate.nome,
-        ativa: contextUpdate.ativa ?? true,
-        status: contextUpdate.ativa ?? true,
-        velocidade: 0, // Não vem no context_update
+        ativa: contextUpdate.ativa ?? true, // Se máquina está ligada
+        status: contextUpdate.status ?? true, // ✅ status do backend (true = produzindo, false = parada)
+        velocidade: contextUpdate.velocidade ?? 0, // ✅ Velocidade do backend
         last_updated: contextUpdate.last_updated || Math.floor(Date.now() / 1000),
         
         // Normalizar producao_mapa usando helper existente
@@ -973,7 +969,9 @@ export function useSSEManager(options: SSEManagerOptions) {
           tempo_valido_segundos: contextUpdate.producao_mapa?.tempo_valido_segundos ?? 0
         },
         
-        parada_ativa: null, // context_update não traz parada ativa
+        // ✅ ATUALIZADO: context_update TRAZ parada_ativa e sessao_operador
+        parada_ativa: contextUpdate.parada_ativa || null,
+        sessao_operador: contextUpdate.sessao_operador || null,
         multipostos: contextUpdate.multipostos ?? false
       };
       

@@ -28,22 +28,19 @@ function App() {
   const [showHiddenButton, setShowHiddenButton] = useState(false);
   const [logoClickCount, setLogoClickCount] = useState(0);
   
-  // ✅ NOVO: Usando hook de autenticação da API REST
-  const { isAuthenticated, operator, secondaryOperator, isLoading, error, login, logout, checkSavedSession, restoreSession, clearAllLocalData } = useAuth();
+  // ✅ Usando hook de autenticação simplificado
+  const { isAuthenticated, operator, secondaryOperator, isLoading, error, login, logout } = useAuth();
   
   useWakeLock();
 
-  // ✅ NOVO: Se houver erro de autenticação em useAuth, limpar TODOS os dados locais
+  // ✅ Se houver erro crítico de autenticação, fazer logout
   useEffect(() => {
     if (error && (error.includes('401') || error.includes('403') || error.includes('não autorizado') || error.includes('autenticação') || error.includes('sessão inválida'))) {
-      console.warn('⚠️ App: Erro de autenticação detectado, limpando TODOS os dados locais');
-      clearAllLocalData();
-      // Limpar estado de autenticação
+      console.warn('⚠️ App: Erro de autenticação detectado, fazendo logout');
       logout();
-      // Limpar máquina selecionada
       setCurrentMachine(null);
     }
-  }, [error, logout, clearAllLocalData]);
+  }, [error, logout]);
 
   // 🧪 Atalhos para testes (Ctrl+Shift+S, Ctrl+Shift+C, Ctrl+Shift+D)
   useEffect(() => {
@@ -83,8 +80,9 @@ function App() {
           return;
         }
 
-        // ✅ Carregar máquina salva (useAuth já restaura a autenticação)
+        // ✅ SIMPLIFICADO: Carregar máquina salva
         const savedMachine = machineStorage.getCurrentMachine();
+        
         if (savedMachine) {
           console.log('✅ Máquina salva encontrada:', savedMachine.nome);
           setCurrentMachine(savedMachine);
@@ -96,6 +94,7 @@ function App() {
         console.error('❌ Erro na inicialização:', error);
       } finally {
         setInitialLoading(false);
+        console.log('✅ Inicialização do App concluída');
       }
     };
 
