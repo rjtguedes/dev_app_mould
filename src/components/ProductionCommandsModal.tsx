@@ -16,7 +16,8 @@ interface ProductionCommandsModalProps {
   onFinishSession?: () => Promise<void>;
 }
 
-export function ProductionCommandsModal({
+// ✅ Memoizar modal para evitar re-renders quando props não mudam
+export const ProductionCommandsModal = React.memo(function ProductionCommandsModal({
   isOpen,
   onClose,
   machineId,
@@ -46,7 +47,14 @@ export function ProductionCommandsModal({
       } catch {
         setStoredProduction(null);
       }
-    } else {
+    }
+    // ✅ IMPORTANTE: NÃO resetar quando modal já está aberto e machineId não muda
+    // Isso evita que o modal se feche sozinho durante updates do SSE
+  }, [isOpen, machineId]);
+  
+  // ✅ NOVO: Resetar estados apenas quando modal FECHA (não quando abre)
+  useEffect(() => {
+    if (!isOpen) {
       // Reset ao fechar
       setStep('mapas');
       setSelectedMapa(null);
@@ -54,7 +62,7 @@ export function ProductionCommandsModal({
       setCurrentStationIndex(0);
       setError(null);
     }
-  }, [isOpen, machineId]);
+  }, [isOpen]);
 
   const loadMapas = async () => {
     try {
@@ -945,4 +953,4 @@ export function ProductionCommandsModal({
       </div>
     </div>
   );
-}
+}); // ✅ Fechar React.memo

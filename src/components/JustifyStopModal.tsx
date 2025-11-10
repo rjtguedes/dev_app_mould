@@ -46,6 +46,17 @@ const iconMap: Record<string, React.ReactElement> = {
   'AlertCircle': <AlertCircle className="w-5 h-5" />
 };
 
+// ✅ Memoizar modal para evitar re-renders desnecessários
+export const JustifyStopModal = React.memo(function JustifyStopModal({
+  isOpen,
+  onClose,
+  onJustify,
+  stopReasons,
+  machineGroup,
+  isPreJustificationMode = false,
+  isManualStop = false
+}: JustifyStopModalProps) {
+
 // Mapeamento de ícones por descrição (fallback)
 const getIconByDescription = (descricao: string) => {
   const lowerDesc = descricao.toLowerCase();
@@ -83,16 +94,10 @@ const getContrastColor = (hexColor: string) => {
   return luminance > 0.5 ? '#000000' : '#FFFFFF';
 };
 
-export function JustifyStopModal({ 
-  isOpen, 
-  onClose, 
-  onJustify, 
-  stopReasons, 
-  machineGroup,
-  isPreJustificationMode,
-  isManualStop = false
-}: JustifyStopModalProps) {
-  if (!isOpen) return null;
+// ✅ Função já declarada acima com React.memo (linha 50)
+// Removida declaração duplicada
+
+if (!isOpen) return null;
 
   // ✅ CORRIGIDO: Separar motivos por grupo da máquina atual
   // Se machineGroup é null, mostrar TODOS os motivos
@@ -249,4 +254,4 @@ export function JustifyStopModal({
       </div>
     </div>
   );
-}
+}); // ✅ Fechar React.memo

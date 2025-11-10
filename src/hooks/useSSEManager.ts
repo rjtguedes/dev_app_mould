@@ -42,6 +42,23 @@ export function useSSEManager(options: SSEManagerOptions) {
   const [childMachinesData, setChildMachinesData] = useState<Map<number, any>>(new Map());
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  
+  // ⚠️ DEBUG: Monitorar mudanças CRÍTICAS em childMachinesData (apenas problemas)
+  useEffect(() => {
+    const size = childMachinesData.size;
+    const ids = Array.from(childMachinesData.keys());
+    
+    // ⚠️ ALERTA CRÍTICO: childMachinesData com tamanho inesperado ou IDs inválidos
+    if (size > 0 && (size === 1 || ids.some(id => !id || isNaN(id)))) {
+      console.error('❌ CRÍTICO: childMachinesData com dados inválidos!', {
+        tamanho: size,
+        ids: ids,
+        dados_invalidos: ids.filter(id => !id || isNaN(id)),
+        stack: new Error().stack
+      });
+    }
+    // ✅ Log reduzido: Só logar mudanças significativas (não a cada update)
+  }, [childMachinesData]);
 
   // ==================== UTIL ====================
   const unwrap = useCallback((payload: any) => {
@@ -77,65 +94,54 @@ export function useSSEManager(options: SSEManagerOptions) {
       id_matriz: producaoAtiva.id_matriz ?? null
     };
     
-    console.log('🎨 mapProducaoAtiva:', {
-      tem_produto: !!mapped.produto_referencia,
-      tem_cor: !!mapped.cor_descricao,
-      produto: mapped.produto_referencia,
-      cor: mapped.cor_descricao
-    });
+    // ✅ Log reduzido: Removido log repetitivo a cada chamada de mapProducaoAtiva
+    // Descomentar apenas se precisar debugar mapeamento de produtos
     
     return mapped;
   }, []);
 
-  // ✅ DEBUG: Log quando machineData é atualizado
+  // ⚠️ DEBUG: Monitorar APENAS problemas críticos em machineData (logs reduzidos)
   useEffect(() => {
     if (machineData) {
-      console.log('🔄 SSE Manager: machineData atualizado para a UI:', {
-        tipo: 'dados_mapeados',
-        id: machineData.contexto?.id,
-        nome: machineData.contexto?.nome,
-        velocidade: machineData.contexto?.velocidade, // ← LOG IMPORTANTE
-        status: machineData.contexto?.status, // ← LOG IMPORTANTE
-        parada_ativa: machineData.contexto?.parada_ativa, // ← LOG IMPORTANTE
-        sinais_sessao: machineData.contexto?.sessao_operador?.sinais,
-        sinais_validos: machineData.contexto?.sessao_operador?.sinais_validos,
-        rejeitos_sessao: machineData.contexto?.sessao_operador?.rejeitos
-      });
+      const logData = {
+        id: machineData.contexto?.id || machineData.contexto?.id_maquina,
+        nome: machineData.contexto?.nome
+      };
       
-      // ⚠️ ALERTA se velocidade for 0 mas máquina tiver produção ativa
-      if (machineData.contexto?.velocidade === 0 && machineData.contexto?.producao_mapa) {
-        console.warn('⚠️ INCONSISTÊNCIA: Velocidade = 0 mas há produção ativa!', {
-          velocidade: machineData.contexto.velocidade,
-          producao_mapa: machineData.contexto.producao_mapa,
-          parada_ativa: machineData.contexto.parada_ativa,
-          status: machineData.contexto.status
+      // ⚠️ ALERTA CRÍTICO: Detectar se machineData está vindo sem ID ou nome
+      if (!logData.id || !logData.nome) {
+        console.error('❌ CRÍTICO: machineData SEM ID OU NOME!', {
+          id: logData.id,
+          nome: logData.nome,
+          machineData_completo: machineData,
+          stack: new Error().stack
         });
       }
+      // ✅ Log reduzido: Removidos logs repetitivos de atualização normal
     }
   }, [machineData]);
 
-  // ==================== BUSCAR MÁQUINAS FILHAS ====================
+  // ==================== BUSCAR MÁQUINAS FILHAS (DESABILITADO) ====================
   
-  // Função para buscar máquinas filhas quando o backend não as inclui no contexto
+  // ⚠️ FUNÇÃO DESABILITADA: NÃO USAR!
+  // A API /api/maquinas retorna apenas metadados (sem sessao_operador, producao_turno, etc.)
+  // e sobrescreve os dados completos que vêm via SSE, causando bug de "Estação undefined"
+  // 
+  // SOLUÇÃO: Confiar APENAS nos dados do SSE (context_update e initial_context)
+  // O backend deve sempre enviar maquinas_filhas com dados completos via SSE
+  
+  /* FALLBACK DESABILITADO - NÃO DESCOMENTAR!
   const buscarMaquinasFilhas = useCallback(async (parentMachineId: number) => {
     try {
       console.log(`🔍 Buscando máquinas filhas para máquina pai ${parentMachineId}...`);
       
       const response = await apiService.listarMaquinas();
       if (response.success && response.data) {
-        // Filtrar máquinas filhas da máquina pai
         const childMachines = response.data.filter((machine: any) => 
           machine.maquina_pai === parentMachineId && machine.maquina_filha === true
         );
         
-        console.log(`📊 Encontradas ${childMachines.length} máquinas filhas:`, childMachines.map(m => ({
-          id: m.id_maquina,
-          nome: m.nome,
-          numero_estacao: m.numero_estacao
-        })));
-        
         if (childMachines.length > 0) {
-          // Criar dados simulados para as máquinas filhas
           const simulatedChildMachinesData = new Map<number, any>();
           
           childMachines.forEach((childMachine: any, index: number) => {
@@ -144,30 +150,22 @@ export function useSSEManager(options: SSEManagerOptions) {
               nome: childMachine.nome,
               ativa: childMachine.ativa || false,
               status: childMachine.status || false,
-              velocidade: childMachine.velocidade_atual || 0,
-              numero_estacao: childMachine.numero_estacao || index + 1,
-              sinais: 0, // Dados não disponíveis sem contexto
+              velocidade: 0,
+              numero_estacao: index + 1,
+              sinais: 0, // ❌ PROBLEMA: Dados vazios sobrescrevem dados reais do SSE!
               sinais_validos: 0,
               rejeitos: 0,
-              sessao_operador: {
-                sinais: 0,
-                sinais_validos: 0,
-                rejeitos: 0,
-                tempo_decorrido_segundos: 0,
-                tempo_paradas_segundos: 0,
-                tempo_valido_segundos: 0
-              },
+              sessao_operador: { sinais: 0, sinais_validos: 0, rejeitos: 0 },
               producao_mapa: null,
               producao_turno: null,
               parada_ativa: null,
               last_updated: Date.now()
             };
             
-            console.log(`💾 Criando dados simulados para máquina filha ${childMachine.id_maquina}:`, simulatedData);
             simulatedChildMachinesData.set(childMachine.id_maquina, simulatedData);
           });
           
-          console.log(`✅ ${simulatedChildMachinesData.size} máquinas filhas adicionadas via fallback`);
+          // ❌ ISSO SOBRESCREVE DADOS REAIS COM DADOS VAZIOS!
           setChildMachinesData(simulatedChildMachinesData);
         }
       }
@@ -175,12 +173,22 @@ export function useSSEManager(options: SSEManagerOptions) {
       console.error(`❌ Erro ao buscar máquinas filhas:`, error);
     }
   }, []);
+  */
 
   // ==================== PROCESSAMENTO DE CONTEXTO INICIAL ====================
 
   // Processar contexto inicial e atualizar máquinas filhas OU máquina simples
   const processInitialContext = useCallback((context: any) => {
-    const contextData = unwrap(context);
+    // ✅ CRÍTICO: Unwrap pode retornar { success: true, data: {...} }
+    // Precisamos garantir que estamos trabalhando com o objeto interno 'data'
+    let contextData = unwrap(context);
+    
+    // Se vier wrapped com success/data, extrair o data
+    if (contextData && contextData.success === true && contextData.data) {
+      console.log('🔓 SSE Manager: Desempacotando wrapper { success: true, data: {...} }');
+      contextData = contextData.data;
+    }
+    
     console.log('🔄 SSE Manager: Processando contexto inicial:', contextData);
     console.log('🔍 SSE Manager: Estrutura do contextData:', {
       has_contextos_filhas: !!contextData.contextos_filhas,
@@ -197,17 +205,23 @@ export function useSSEManager(options: SSEManagerOptions) {
       machine_name: contextData.nome || contextData.maquina?.nome
     });
     
-    // ❌ DIAGNÓSTICO: Para máquinas multipostos, backend deve incluir contextos_filhas
-    if (contextData.multipostos === true && (!contextData.contextos_filhas || contextData.contextos_filhas.length === 0)) {
-      console.error(`❌ PROBLEMA NO BACKEND: Máquina ${contextData.nome} (ID: ${contextData.id}) é multipostos, mas contextos_filhas está vazio!`);
-      console.error(`❌ Backend deveria retornar: { ..., contextos_filhas: [{ id_maquina: X, contexto: {...} }, ...] }`);
+    // ⚠️ PROTEÇÃO: Verificar se contexto é válido para multipostos
+    const isMultipostos = contextData.multipostos === true || contextData.maquina?.multipostos === true;
+    const hasChildMachinesData = (contextData.maquinas_filhas && contextData.maquinas_filhas.length > 0) || 
+                                  (contextData.contextos_filhas && contextData.contextos_filhas.length > 0);
+    
+    console.log(`🔒 SSE Manager: Validação multipostos - isMultipostos: ${isMultipostos}, hasChildMachinesData: ${hasChildMachinesData}`);
+    
+    // ❌ DIAGNÓSTICO: Para máquinas multipostos, backend deve incluir contextos_filhas ou maquinas_filhas
+    if (isMultipostos && !hasChildMachinesData) {
+      console.error(`❌ PROBLEMA NO BACKEND: Máquina ${contextData.nome} (ID: ${contextData.id}) é multipostos, mas maquinas_filhas está vazio!`);
+      console.error(`❌ Backend deveria retornar: { ..., maquinas_filhas: [{ id: X, nome: "...", sessao_operador: {...}, ... }, ...] }`);
       console.error(`❌ Mas retornou:`, Object.keys(contextData));
       
-      // 🔧 SOLUÇÃO TEMPORÁRIA: Buscar máquinas filhas via API REST
-      console.log(`🔧 Tentando buscar máquinas filhas via API REST...`);
-      buscarMaquinasFilhas(contextData.id).catch(err => {
-        console.error(`❌ Erro ao buscar máquinas filhas:`, err);
-      });
+      // ⚠️ NÃO buscar via API REST! A API /api/maquinas retorna apenas metadados
+      // e sobrescreve os dados completos do SSE. Aguardar context_update do backend.
+      console.warn(`⚠️ Aguardando context_update com dados completos das máquinas filhas via SSE...`);
+      // NÃO chamar buscarMaquinasFilhas() - isso causa o bug!
     }
     
     // ✅ NOVO: Caso 1A: Nova estrutura - maquinas_filhas (formato novo do backend)
@@ -217,55 +231,69 @@ export function useSSEManager(options: SSEManagerOptions) {
       const newChildMachinesData = new Map<number, any>();
       
       contextData.maquinas_filhas.forEach((childMachine: any, index: number) => {
-        console.log(`🔍 SSE Manager: Processando máquina filha [${index}]:`, childMachine);
+        // ✅ CORRIGIDO: Usar os nomes corretos dos campos enviados pelo backend
+        // Backend envia: { id, nome, sessao_operador, producao_mapa, ... }
+        // NÃO: { id_maquina, sessao_ativa, producao_ativa }
+        const childId = childMachine.id || childMachine.id_maquina;
+        const childNome = childMachine.nome;
+        const childStatus = childMachine.status;
+        const childAtiva = childMachine.ativa;
+        const sessaoOperador = childMachine.sessao_operador; // ✅ NÃO sessao_ativa
+        const producaoTurno = childMachine.producao_turno;
+        const producaoMapa = childMachine.producao_mapa; // ✅ NÃO producao_ativa
         
-        const { id_maquina, nome, status, sessao_ativa, producao_turno, producao_ativa } = childMachine;
+        // ⚠️ VALIDAÇÃO: Pular se ID for inválido
+        if (!childId || typeof childId !== 'number') {
+          console.error(`❌ Máquina filha [${index}] com ID inválido:`, childMachine);
+          return;
+        }
         
-        console.log(`✅ SSE Manager: Processando máquina filha ${id_maquina}:`, {
-          nome,
-          status,
-          sessao_sinais: sessao_ativa?.sinais || 0,
-          sessao_rejeitos: sessao_ativa?.rejeitos || 0,
-          turno_sinais: producao_turno?.sinais || 0
-        });
+        // ✅ Log reduzido: Apenas log resumido, não detalhado para cada máquina
         
         // Armazenar dados da máquina filha (nova estrutura)
         const childMachineData = {
-          id_maquina,
-          nome,
-          ativa: status === 'ativo' || status === true,
-          status: status === 'ativo' || status === true,
-          velocidade: childMachine.velocidade || 0,
+          id_maquina: childId, // ✅ ID validado
+          nome: childNome || `Estação ${childId}`, // ✅ Fallback
+          ativa: childAtiva ?? false,
+          status: childStatus ?? false,
+          velocidade: childMachine.velocidade ?? 0,
           numero_estacao: index + 1, // EVA: baseado na posição
-          sinais: sessao_ativa?.sinais || producao_turno?.sinais || 0,
-          sinais_validos: sessao_ativa?.sinais_validos || producao_turno?.sinais_validos || producao_turno?.sinais || 0,
-          rejeitos: sessao_ativa?.rejeitos || producao_turno?.rejeitos || 0,
+          sinais: sessaoOperador?.sinais || producaoTurno?.sinais || 0,
+          sinais_validos: sessaoOperador?.sinais_validos || producaoTurno?.sinais_validos || producaoTurno?.sinais || 0,
+          rejeitos: sessaoOperador?.rejeitos || producaoTurno?.rejeitos || 0,
           sessao_operador: {
-            sinais: sessao_ativa?.sinais || 0,
-            sinais_validos: sessao_ativa?.sinais_validos || sessao_ativa?.sinais || 0,
-            rejeitos: sessao_ativa?.rejeitos || 0,
-            tempo_decorrido_segundos: 0,
-            tempo_paradas_segundos: 0,
-            tempo_valido_segundos: 0
+            id_sessao: sessaoOperador?.id_sessao ?? null,
+            sinais: sessaoOperador?.sinais ?? 0,
+            sinais_validos: sessaoOperador?.sinais_validos ?? sessaoOperador?.sinais ?? 0,
+            rejeitos: sessaoOperador?.rejeitos ?? 0,
+            tempo_decorrido_segundos: sessaoOperador?.tempo_decorrido_segundos ?? 0,
+            tempo_paradas_segundos: sessaoOperador?.tempo_paradas_segundos ?? 0,
+            tempo_valido_segundos: sessaoOperador?.tempo_valido_segundos ?? 0
           },
-          producao_mapa: producao_ativa,
-          producao_turno: producao_turno,
-          parada_ativa: childMachine.parada_ativa,
+          producao_mapa: producaoMapa ? mapProducaoAtiva(producaoMapa) : null, // ✅ Normalizar
+          producao_turno: producaoTurno ? {
+            ...producaoTurno,
+            sinais: producaoTurno.sinais ?? 0,
+            sinais_validos: producaoTurno.sinais_validos ?? producaoTurno.sinais ?? 0,
+            rejeitos: producaoTurno.rejeitos ?? 0
+          } : null,
+          parada_ativa: childMachine.parada_ativa ?? null,
           last_updated: childMachine.last_updated || Date.now()
         };
         
-        console.log(`💾 SSE Manager: Dados processados para máquina filha ${id_maquina}:`, childMachineData);
-        newChildMachinesData.set(id_maquina, childMachineData);
+        // ✅ Log reduzido: Removido log repetitivo de cada máquina
+        newChildMachinesData.set(childId, childMachineData); // ✅ Usar childId validado
       });
       
-      console.log(`📊 SSE Manager: ${newChildMachinesData.size} máquinas filhas processadas (nova estrutura)`);
+      // ✅ Log resumido: Uma linha apenas
+      console.log(`📊 SSE Manager: ${newChildMachinesData.size} máquinas filhas processadas (initial_context) - IDs: [${Array.from(newChildMachinesData.keys()).join(', ')}]`);
       setChildMachinesData(newChildMachinesData);
       
       // Definir dados da máquina principal (nova estrutura)
-      // ✅ Detectar parada forçada
+      // ✅ CORRIGIDO: Backend envia dados diretamente no contextData, não em contextData.maquina
       let paradaAtivaMain = contextData.parada_ativa ?? null;
       const paradaForcadaMain = contextData.parada_forcada;
-      let statusMain = contextData.maquina?.status || true;
+      let statusMain = contextData.status ?? true; // ✅ NÃO contextData.maquina.status
       
       if (paradaForcadaMain && paradaForcadaMain.ativa === true) {
         console.log('🛑 SSE Manager: Parada forçada detectada na máquina principal (multipostos):', paradaForcadaMain);
@@ -280,27 +308,34 @@ export function useSSEManager(options: SSEManagerOptions) {
       
       const mainMachineData = {
         contexto: {
-          id: contextData.maquina?.id_maquina,
-          nome: contextData.maquina?.nome,
-          velocidade: contextData.maquina?.velocidade || 0,
+          id: contextData.id, // ✅ CORRIGIDO: contextData.id, não contextData.maquina.id_maquina
+          id_maquina: contextData.id, // ✅ Adicionar também id_maquina
+          nome: contextData.nome, // ✅ CORRIGIDO: contextData.nome, não contextData.maquina.nome
+          velocidade: contextData.velocidade ?? 0, // ✅ CORRIGIDO
+          ativa: contextData.ativa ?? true, // ✅ Adicionar campo ativa
           status: statusMain,
-          sessao_operador: contextData.sessao_ativa || {
+          sessao_operador: contextData.sessao_operador || { // ✅ CORRIGIDO: sessao_operador, não sessao_ativa
+            id_sessao: null,
             sinais: 0,
             sinais_validos: 0,
-            rejeitos: 0
+            rejeitos: 0,
+            tempo_decorrido_segundos: 0,
+            tempo_paradas_segundos: 0,
+            tempo_valido_segundos: 0
           },
-          producao_mapa: mapProducaoAtiva(contextData.producao_ativa),
-          producao_turno: contextData.producao_turno,
+          producao_mapa: mapProducaoAtiva(contextData.producao_mapa), // ✅ CORRIGIDO: producao_mapa, não producao_ativa
+          producao_turno: contextData.producao_turno || null,
           parada_ativa: paradaAtivaMain,
-          parada_forcada: paradaForcadaMain ?? null
+          parada_forcada: paradaForcadaMain ?? null,
+          multipostos: contextData.multipostos ?? false // ✅ Adicionar flag
         }
       };
       
       console.log(`✅ SSE Manager: Dados da máquina principal (nova estrutura):`, mainMachineData);
       
       // ✅ NOVO: Salvar sessão no localStorage quando receber do SSE
-      if (contextData.sessao_ativa && contextData.sessao_ativa.id_sessao) {
-        saveSessaoToLocalStorage(contextData.sessao_ativa, machineId);
+      if (contextData.sessao_operador && contextData.sessao_operador.id_sessao) {
+        saveSessaoToLocalStorage(contextData.sessao_operador, machineId);
       }
       
       // 🔒 Não sobrescrever contadores com zeros logo após reinício de sessão
@@ -488,11 +523,12 @@ export function useSSEManager(options: SSEManagerOptions) {
       });
       return;
     }
-  }, [machineId, buscarMaquinasFilhas, mapProducaoAtiva]);
+  }, [machineId, mapProducaoAtiva]); // buscarMaquinasFilhas removido - função desabilitada
 
   // Handler para mensagens SSE
   const handleSSEMessage = useCallback((data: any) => {
-    console.log('📊 SSE Manager: Processando mensagem:', data.type, data);
+    // ✅ Log reduzido: Apenas tipo da mensagem, não o objeto completo
+    console.log('📊 SSE Manager: Processando mensagem:', data.type);
     
     // ✅ NOVO: Processar evento 'connected' com initial_context
     if (data.type === 'connected' && data.initial_context) {
@@ -512,6 +548,13 @@ export function useSSEManager(options: SSEManagerOptions) {
     if (data.type === 'machine_data' || data.type === 'update' || data.type === 'machine_update') {
       const unwrapped = unwrap(data);
       const rawPayload = unwrapped.dados_maquina || unwrapped.machine_data || unwrapped.data || unwrapped;
+      
+      // ⚠️ PROTEÇÃO CRÍTICA: Não processar eventos sem dados válidos de máquina principal
+      // Isso evita sobrescrever childMachinesData com dados vazios
+      if (!rawPayload || (typeof rawPayload === 'object' && Object.keys(rawPayload).length === 0)) {
+        console.warn('⚠️ SSE Manager: Evento machine_data/update sem payload válido, ignorando para preservar dados existentes');
+        return; // NÃO atualizar nada, manter dados existentes
+      }
 
       // ✅ Normalizar se vier no formato novo (maquina/sessao_ativa/producao_ativa)
       let machineDataPayload: any = (rawPayload && (rawPayload.maquina || rawPayload.sessao_ativa || rawPayload.producao_ativa || rawPayload.sessao_operador || rawPayload.producao_mapa))
@@ -529,6 +572,13 @@ export function useSSEManager(options: SSEManagerOptions) {
             }
           }
         : rawPayload;
+      
+      // ⚠️ PROTEÇÃO ADICIONAL: Verificar se tem ID válido antes de processar
+      const machineIdInPayload = machineDataPayload?.contexto?.id_maquina || machineDataPayload?.id_maquina || machineDataPayload?.id;
+      if (!machineIdInPayload) {
+        console.warn('⚠️ SSE Manager: Evento sem ID de máquina válido, ignorando para preservar dados existentes:', machineDataPayload);
+        return; // NÃO atualizar, ID inválido
+      }
 
       // 🔧 ENRIQUECER: Se contexto de sessão não trouxe contadores, usar 'estatisticas' (preferencial) ou 'producao_turno' como fallback
       const ctx = machineDataPayload?.contexto ? machineDataPayload.contexto : machineDataPayload;
@@ -638,6 +688,13 @@ export function useSSEManager(options: SSEManagerOptions) {
       // Verificar se é rejeito para máquina principal ou filha
       const unwrapped = unwrap(data);
       const targetMachineId = unwrapped.target_machine_id || unwrapped.id_maquina;
+      
+      // ⚠️ PROTEÇÃO: Validar ID da máquina alvo
+      if (!targetMachineId || typeof targetMachineId !== 'number') {
+        console.warn('⚠️ SSE Manager: Evento rejeitos_adicionados sem ID de máquina válido, ignorando:', unwrapped);
+        return; // NÃO processar, ID inválido
+      }
+      
       const isChildMachine = targetMachineId !== machineId;
       
       console.log(`🎯 Rejeito para máquina ${targetMachineId} (é filha: ${isChildMachine})`);
@@ -657,7 +714,7 @@ export function useSSEManager(options: SSEManagerOptions) {
           const childData = updatedMap.get(targetMachineId);
           
           if (childData) {
-            console.log(`🔄 Atualizando rejeitos para estação ${targetMachineId}:`, {
+            console.log(`🔄 Atualizando rejeitos para estação ${targetMachineId} (${childData.nome}):`, {
               rejeitos_anterior: childData.sessao_operador?.rejeitos,
               rejeitos_novo: getCount(unwrapped.data || unwrapped, ['total_rejeitos_sessao','rejeitos_sessao'])
             });
@@ -681,9 +738,10 @@ export function useSSEManager(options: SSEManagerOptions) {
             };
             
             updatedMap.set(targetMachineId, updatedChildData);
-            console.log(`✅ Estação ${targetMachineId} atualizada com novos rejeitos:`, updatedChildData.sessao_operador);
+            console.log(`✅ Estação ${targetMachineId} (${childData.nome}) atualizada com novos rejeitos:`, updatedChildData.sessao_operador);
           } else {
-            console.warn(`⚠️ Máquina filha ${targetMachineId} não encontrada no childMachinesData`);
+            console.warn(`⚠️ Máquina filha ${targetMachineId} não encontrada no childMachinesData (size: ${prev.size})`);
+            console.warn(`⚠️ IDs disponíveis:`, Array.from(prev.keys()));
           }
           
           return updatedMap;
@@ -933,8 +991,175 @@ export function useSSEManager(options: SSEManagerOptions) {
         return;
       }
       
-      // Normalizar estrutura do contexto recebido
-      // O backend envia: context { producao_mapa, producao_turno, ... }
+      // ✅ NOVO: Processar máquinas filhas se for multipostos
+      if (contextUpdate.multipostos && contextUpdate.maquinas_filhas && Array.isArray(contextUpdate.maquinas_filhas)) {
+        console.log(`📊 SSE Manager: context_update MULTIPOSTOS - ${contextUpdate.maquinas_filhas.length} máquinas filhas encontradas`);
+        
+        const newChildMachinesData = new Map<number, any>();
+        
+        contextUpdate.maquinas_filhas.forEach((childMachine: any, index: number) => {
+          // ⚠️ PROTEÇÃO CRÍTICA: Validar ID antes de processar
+          const childId = childMachine.id || childMachine.id_maquina;
+          if (!childId || typeof childId !== 'number') {
+            console.error(`❌ SSE Manager: Máquina filha na posição ${index} tem ID inválido:`, childMachine);
+            return; // PULAR esta máquina filha
+          }
+          
+          // ✅ Log reduzido: Apenas para primeira carga ou erros (não a cada update)
+          
+          // Normalizar dados da máquina filha
+          const childMachineData = {
+            id_maquina: childId, // ✅ Usar ID validado
+            nome: childMachine.nome || `Estação ${childId}`, // ✅ Fallback para nome
+            ativa: childMachine.ativa ?? false,
+            status: childMachine.status ?? false,
+            velocidade: childMachine.velocidade ?? 0,
+            numero_estacao: index + 1, // Baseado na posição no array
+            
+            // Contadores da sessão do operador
+            sinais: childMachine.sessao_operador?.sinais ?? 0,
+            sinais_validos: childMachine.sessao_operador?.sinais_validos ?? childMachine.sessao_operador?.sinais ?? 0,
+            rejeitos: childMachine.sessao_operador?.rejeitos ?? 0,
+            
+            // Sessão completa do operador
+            sessao_operador: {
+              id_sessao: childMachine.sessao_operador?.id_sessao ?? null,
+              sinais: childMachine.sessao_operador?.sinais ?? 0,
+              sinais_validos: childMachine.sessao_operador?.sinais_validos ?? childMachine.sessao_operador?.sinais ?? 0,
+              rejeitos: childMachine.sessao_operador?.rejeitos ?? 0,
+              tempo_decorrido_segundos: childMachine.sessao_operador?.tempo_decorrido_segundos ?? 0,
+              tempo_paradas_segundos: childMachine.sessao_operador?.tempo_paradas_segundos ?? 0,
+              tempo_valido_segundos: childMachine.sessao_operador?.tempo_valido_segundos ?? 0
+            },
+            
+            // Produção do turno
+            producao_turno: childMachine.producao_turno ? {
+              ...childMachine.producao_turno,
+              sinais: childMachine.producao_turno.sinais ?? 0,
+              sinais_validos: childMachine.producao_turno.sinais_validos ?? childMachine.producao_turno.sinais ?? 0,
+              rejeitos: childMachine.producao_turno.rejeitos ?? 0
+            } : null,
+            
+            // Produção do mapa (normalizada)
+            producao_mapa: childMachine.producao_mapa ? mapProducaoAtiva(childMachine.producao_mapa) : null,
+            
+            // Parada ativa
+            parada_ativa: childMachine.parada_ativa ?? null,
+            
+            // Timestamp de atualização
+            last_updated: childMachine.last_updated || Date.now()
+          };
+          
+          // ✅ Log reduzido: Removido log repetitivo de cada máquina processada
+          newChildMachinesData.set(childId, childMachineData); // ✅ Usar ID validado
+        });
+        
+        // ✅ Log resumido: Uma linha apenas com o total
+        console.log(`📊 SSE Manager: ${newChildMachinesData.size} máquinas filhas processadas via context_update - IDs: [${Array.from(newChildMachinesData.keys()).join(', ')}]`);
+        
+        // ⚠️ PROTEÇÃO CRÍTICA: Não sobrescrever dados existentes com Map vazio
+        if (newChildMachinesData.size === 0) {
+          console.warn('⚠️ SSE Manager: context_update não trouxe máquinas filhas válidas. Preservando dados existentes.');
+          // NÃO atualizar childMachinesData, manter dados existentes
+        } else {
+          // Atualizar childMachinesData com merge inteligente
+          setChildMachinesData(prev => {
+            // Se não há dados anteriores, usar os novos
+            if (prev.size === 0) {
+              console.log(`✅ SSE Manager: Primeira carga de máquinas filhas - ${newChildMachinesData.size} estações`);
+              return newChildMachinesData;
+            }
+            
+            // ⚠️ OTIMIZAÇÃO: Verificar se REALMENTE houve mudanças antes de atualizar
+            // Isso evita re-renders desnecessários quando SSE envia os mesmos dados
+            let hasChanges = false;
+            
+            if (prev.size !== newChildMachinesData.size) {
+              hasChanges = true;
+              console.log(`🔄 SSE Manager: Tamanho mudou - Anterior: ${prev.size}, Novo: ${newChildMachinesData.size}`);
+            }
+            
+            if (!hasChanges) {
+              // Verificar se algum dado mudou
+              for (const [childId, newData] of newChildMachinesData.entries()) {
+                const prevData = prev.get(childId);
+                
+                if (!prevData) {
+                  hasChanges = true;
+                  console.log(`🔄 SSE Manager: Nova máquina filha detectada: ${childId}`);
+                  break;
+                }
+                
+                // Verificar mudanças em campos importantes
+                if (
+                  prevData.sinais !== newData.sinais ||
+                  prevData.sinais_validos !== newData.sinais_validos ||
+                  prevData.rejeitos !== newData.rejeitos ||
+                  prevData.status !== newData.status ||
+                  prevData.ativa !== newData.ativa ||
+                  prevData.velocidade !== newData.velocidade ||
+                  prevData.sessao_operador?.sinais !== newData.sessao_operador?.sinais ||
+                  prevData.producao_turno?.sinais !== newData.producao_turno?.sinais ||
+                  prevData.producao_mapa?.sinais !== newData.producao_mapa?.sinais
+                ) {
+                  hasChanges = true;
+                  console.log(`🔄 SSE Manager: Mudanças detectadas na máquina filha ${childId}`);
+                  break;
+                }
+              }
+            }
+            
+            if (!hasChanges) {
+              console.log(`⏭️ SSE Manager: Nenhuma mudança detectada em childMachinesData, mantendo objeto anterior (evita re-render)`);
+              return prev; // ✅ Retornar o MESMO objeto, não criar novo
+            }
+            
+            console.log(`🔄 SSE Manager: Fazendo merge de máquinas filhas - Anterior: ${prev.size}, Novo: ${newChildMachinesData.size}`);
+          
+          // Merge: preservar contadores se os novos vierem zerados
+          const mergedMap = new Map<number, any>();
+          
+          newChildMachinesData.forEach((newData, childId) => {
+            const prevData = prev.get(childId);
+            
+            if (!prevData) {
+              // Máquina filha nova, adicionar
+              mergedMap.set(childId, newData);
+              return;
+            }
+            
+            // Merge inteligente: evitar zerar contadores recentemente atualizados
+            const now = Date.now();
+            const prevUpdated = prevData.last_updated || now;
+            const freshWindowMs = 2 * 60 * 1000; // 2 min
+            
+            const prevSessao = prevData.sessao_operador || {};
+            const nextSessao = newData.sessao_operador || {};
+            
+            const shouldKeepSessionCounts =
+              (prevSessao.sinais > 0 || prevSessao.sinais_validos > 0 || prevSessao.rejeitos > 0) &&
+              (nextSessao.sinais === 0 && nextSessao.sinais_validos === 0 && nextSessao.rejeitos === 0) &&
+              (now - prevUpdated < freshWindowMs);
+            
+            mergedMap.set(childId, {
+              ...prevData,
+              ...newData,
+              // Preservar contadores de sessão se necessário
+              sessao_operador: shouldKeepSessionCounts ? { ...nextSessao, ...prevSessao } : nextSessao,
+              sinais: shouldKeepSessionCounts ? prevSessao.sinais : nextSessao.sinais,
+              sinais_validos: shouldKeepSessionCounts ? prevSessao.sinais_validos : nextSessao.sinais_validos,
+              rejeitos: shouldKeepSessionCounts ? prevSessao.rejeitos : nextSessao.rejeitos,
+              last_updated: newData.last_updated || now
+            });
+          });
+          
+            return mergedMap;
+          });
+        }
+      }
+      
+      // Normalizar estrutura do contexto da máquina principal
+      // O backend envia: context { producao_mapa, producao_turno, sessao_operador, ... }
       // Precisamos adaptar para o formato esperado pela UI
       const normalizedContext = {
         id_maquina: contextUpdate.id || targetMachineId,
@@ -955,23 +1180,16 @@ export function useSSEManager(options: SSEManagerOptions) {
           rejeitos: contextUpdate.producao_turno.rejeitos ?? 0
         } : null,
         
-        // Extrair sessao_operador dos sinais/sinais_validos do contexto
-        // Os sinais da sessão vêm de context.sinais e context.sinais_validos
-        // Os rejeitos da sessão podem vir de producao_mapa.rejeitos ou serem calculados
-        sessao_operador: {
-          id_sessao: contextUpdate.sessoes && contextUpdate.sessoes.length > 0 ? contextUpdate.sessoes[0] : null,
-          sinais: contextUpdate.sinais ?? 0,
-          sinais_validos: contextUpdate.sinais_validos ?? contextUpdate.sinais ?? 0,
-          // Rejeitos podem vir de producao_mapa.rejeitos (se for sessão atual) ou ser 0
-          rejeitos: contextUpdate.producao_mapa?.rejeitos ?? 0,
-          tempo_decorrido_segundos: contextUpdate.producao_mapa?.tempo_decorrido_segundos ?? 0,
-          tempo_paradas_segundos: contextUpdate.producao_mapa?.tempo_paradas_segundos ?? 0,
-          tempo_valido_segundos: contextUpdate.producao_mapa?.tempo_valido_segundos ?? 0
-        },
+        // ✅ NOVO: sessao_operador vem direto do backend
+        sessao_operador: contextUpdate.sessao_operador ? {
+          ...contextUpdate.sessao_operador,
+          sinais: contextUpdate.sessao_operador.sinais ?? 0,
+          sinais_validos: contextUpdate.sessao_operador.sinais_validos ?? contextUpdate.sessao_operador.sinais ?? 0,
+          rejeitos: contextUpdate.sessao_operador.rejeitos ?? 0
+        } : null,
         
-        // ✅ ATUALIZADO: context_update TRAZ parada_ativa e sessao_operador
+        // ✅ context_update TRAZ parada_ativa
         parada_ativa: contextUpdate.parada_ativa || null,
-        sessao_operador: contextUpdate.sessao_operador || null,
         multipostos: contextUpdate.multipostos ?? false
       };
       
@@ -979,12 +1197,14 @@ export function useSSEManager(options: SSEManagerOptions) {
       setMachineData(prev => {
         if (!prev || !prev.contexto) {
           // Primeira atualização, criar estrutura completa
+          console.log('✅ SSE Manager: Primeira atualização de machineData (máquina principal)');
           return {
             contexto: normalizedContext
           };
         }
         
-        // Merge inteligente: manter valores anteriores se os novos estiverem zerados
+        // ⚠️ OTIMIZAÇÃO: Verificar se REALMENTE houve mudanças antes de atualizar
+        // Isso evita re-renders desnecessários quando SSE envia os mesmos dados
         const prevCtx = prev.contexto;
         const now = Date.now();
         const prevUpdated = prevCtx.last_updated || now;
@@ -996,6 +1216,26 @@ export function useSSEManager(options: SSEManagerOptions) {
         const prevMapa = prevCtx.producao_mapa || {};
         const nextMapa = normalizedContext.producao_mapa || {};
         
+        // Verificar se houve mudanças reais
+        const hasChanges = (
+          prevCtx.status !== normalizedContext.status ||
+          prevCtx.ativa !== normalizedContext.ativa ||
+          prevCtx.velocidade !== normalizedContext.velocidade ||
+          prevSessao.sinais !== nextSessao.sinais ||
+          prevSessao.sinais_validos !== nextSessao.sinais_validos ||
+          prevSessao.rejeitos !== nextSessao.rejeitos ||
+          prevCtx.producao_turno?.sinais !== normalizedContext.producao_turno?.sinais ||
+          prevMapa.sinais !== nextMapa.sinais ||
+          prevMapa.sinais_validos !== nextMapa.sinais_validos ||
+          prevMapa.rejeitos !== nextMapa.rejeitos ||
+          prevCtx.parada_ativa?.id !== normalizedContext.parada_ativa?.id
+        );
+        
+        if (!hasChanges) {
+          console.log('⏭️ SSE Manager: Nenhuma mudança detectada em machineData, mantendo objeto anterior (evita re-render)');
+          return prev; // ✅ Retornar o MESMO objeto, não criar novo
+        }
+        
         const shouldKeepSessionCounts =
           (prevSessao.sinais > 0 || prevSessao.sinais_validos > 0 || prevSessao.rejeitos > 0) &&
           (nextSessao.sinais === 0 && (nextSessao.sinais_validos ?? 0) === 0 && (nextSessao.rejeitos ?? 0) === 0) &&
@@ -1006,9 +1246,10 @@ export function useSSEManager(options: SSEManagerOptions) {
           (nextMapa && nextMapa.sinais === 0 && (nextMapa.sinais_validos ?? 0) === 0 && (nextMapa.rejeitos ?? 0) === 0) &&
           (now - prevUpdated < freshWindowMs);
         
-        console.log('🔄 SSE Manager: Atualizando contexto com context_update:', {
+        console.log('🔄 SSE Manager: Atualizando contexto da máquina principal com context_update (mudanças detectadas):', {
           id: normalizedContext.id_maquina,
           nome: normalizedContext.nome,
+          multipostos: normalizedContext.multipostos,
           sinais: normalizedContext.sessao_operador?.sinais,
           sinais_validos: normalizedContext.sessao_operador?.sinais_validos,
           preservando_sessao: shouldKeepSessionCounts,
@@ -1023,10 +1264,10 @@ export function useSSEManager(options: SSEManagerOptions) {
             sessao_operador: shouldKeepSessionCounts ? { ...nextSessao, ...prevSessao } : nextSessao,
             producao_mapa: shouldKeepMapaCounts ? { ...nextMapa, sinais: prevMapa.sinais, sinais_validos: prevMapa.sinais_validos, rejeitos: prevMapa.rejeitos } : nextMapa,
             // Manter velocidade e status se não vierem no update
-            velocidade: normalizedContext.velocidade || prevCtx.velocidade || 0,
+            velocidade: normalizedContext.velocidade ?? prevCtx.velocidade ?? 0,
             status: normalizedContext.status ?? prevCtx.status ?? true,
-            // Manter parada_ativa se existir (não vem no context_update)
-            parada_ativa: prevCtx.parada_ativa || normalizedContext.parada_ativa,
+            // Usar parada_ativa do novo contexto ou manter a anterior
+            parada_ativa: normalizedContext.parada_ativa ?? prevCtx.parada_ativa,
             last_updated: normalizedContext.last_updated || now
           }
         };
@@ -1206,26 +1447,56 @@ export function useSSEManager(options: SSEManagerOptions) {
     return response;
   }, [machineId]);
 
-  // Adicionar rejeitos
-  const adicionarRejeitos = useCallback(async (request: Omit<AdicionarRejeitosRequest, 'id_maquina'>) => {
+  // Adicionar rejeitos (permite especificar id_maquina para estações)
+  const adicionarRejeitos = useCallback(async (request: Omit<AdicionarRejeitosRequest, 'id_maquina'> & { id_maquina?: number }) => {
+    // ✅ Se id_maquina for fornecido, usar ele (para estações filhas)
+    // Caso contrário, usar machineId do hook (máquina principal)
+    const targetMachineId = request.id_maquina ?? machineId;
+    
+    console.log(`📤 adicionarRejeitos chamado:`, {
+      target_machine_id: targetMachineId,
+      machine_id_hook: machineId,
+      eh_estacao_filha: targetMachineId !== machineId,
+      quantidade: request.quantidade
+    });
+    
     const response = await apiService.adicionarRejeitos({
-      id_maquina: machineId,
-      ...request
+      id_maquina: targetMachineId,
+      quantidade: request.quantidade,
+      id_motivo_rejeito: request.id_motivo_rejeito
     });
     
     if (!response.success) {
       setError(response.error || 'Erro ao adicionar rejeitos');
     } else {
-      // ✅ Atualização instantânea dos contadores locais com base no retorno da API
+      // ✅ ATUALIZAÇÃO INSTANTÂNEA (Otimista) - Baseada na resposta do servidor
+      console.log('📥 Resposta completa do servidor (adicionarRejeitos):', response);
+      
       try {
         const payload: any = response.data || {};
+        console.log('📦 Payload extraído de response.data:', payload);
+        
         const targetId: number = payload.id_maquina ?? machineId;
+        console.log('🎯 ID da máquina alvo:', targetId, '(machineId principal:', machineId, ')');
+        
         const counters: any = payload.contadores || {};
+        console.log('🔢 Objeto contadores:', counters);
+        
+        // Extrair contadores da resposta do servidor
         const sessaoRej = counters.sessao_rejeitos;
         const turnoRej = counters.turno_rejeitos;
         const mapaRej = counters.mapa_rejeitos;
+        
+        console.log(`✅ Contadores extraídos para Máquina ${targetId}:`, {
+          sessao_rejeitos: sessaoRej,
+          turno_rejeitos: turnoRej,
+          mapa_rejeitos: mapaRej,
+          todos_undefined: sessaoRej === undefined && turnoRej === undefined && mapaRej === undefined
+        });
 
         if (targetId === machineId) {
+          // Atualizar máquina principal
+          console.log('🔄 Atualizando rejeitos da máquina principal');
           setMachineData(prev => {
             if (!prev || !prev.contexto) return prev;
             return {
@@ -1248,32 +1519,79 @@ export function useSSEManager(options: SSEManagerOptions) {
             };
           });
         } else {
-          // Pode ser uma estação (máquina filha)
+          // ✅ Atualizar estação (máquina filha)
+          console.log(`🔄 Atualizando rejeitos da estação ${targetId} instantaneamente`);
+          console.log(`📊 Contadores recebidos do servidor:`, {
+            sessao_rejeitos: sessaoRej,
+            turno_rejeitos: turnoRej,
+            mapa_rejeitos: mapaRej
+          });
+          
           setChildMachinesData(prev => {
+            console.log(`📋 childMachinesData antes da atualização:`, {
+              tamanho: prev.size,
+              ids: Array.from(prev.keys()),
+              tem_estacao_alvo: prev.has(targetId)
+            });
+            
             const updated = new Map(prev);
             const child = updated.get(targetId);
-            if (!child) return prev;
-            updated.set(targetId, {
+            
+            if (!child) {
+              console.error(`❌ CRÍTICO: Estação ${targetId} NÃO encontrada no childMachinesData!`, {
+                targetId,
+                ids_disponiveis: Array.from(prev.keys()),
+                tamanho_map: prev.size
+              });
+              return prev;
+            }
+            
+            console.log(`📊 Dados ANTES da atualização - Estação ${targetId}:`, {
+              nome: child.nome,
+              sessao_rejeitos_antes: child.sessao_operador?.rejeitos,
+              turno_rejeitos_antes: child.producao_turno?.rejeitos,
+              mapa_rejeitos_antes: child.producao_mapa?.rejeitos
+            });
+            
+            const updatedChild = {
               ...child,
+              // Atualizar contadores de sessão
               sessao_operador: child.sessao_operador ? {
                 ...child.sessao_operador,
-                ...(sessaoRej !== undefined ? { rejeitos: sessaoRej } : {})
+                rejeitos: sessaoRej !== undefined ? sessaoRej : child.sessao_operador.rejeitos
               } : child.sessao_operador,
+              // Atualizar contadores de turno
               producao_turno: child.producao_turno ? {
                 ...child.producao_turno,
-                ...(turnoRej !== undefined ? { rejeitos: turnoRej } : {})
+                rejeitos: turnoRej !== undefined ? turnoRej : child.producao_turno.rejeitos
               } : child.producao_turno,
+              // Atualizar contadores de mapa
               producao_mapa: child.producao_mapa ? {
                 ...child.producao_mapa,
-                ...(mapaRej !== undefined ? { rejeitos: mapaRej } : {})
+                rejeitos: mapaRej !== undefined ? mapaRej : child.producao_mapa.rejeitos
               } : child.producao_mapa,
+              // Atualizar também os contadores no nível raiz (usado pelo Eva16StationsView)
+              rejeitos: turnoRej ?? sessaoRej ?? mapaRej ?? child.rejeitos,
               last_updated: Date.now()
+            };
+            
+            updated.set(targetId, updatedChild);
+            
+            console.log(`✅ Estação ${targetId} ATUALIZADA instantaneamente:`, {
+              nome: updatedChild.nome,
+              sessao_rejeitos_depois: updatedChild.sessao_operador?.rejeitos,
+              turno_rejeitos_depois: updatedChild.producao_turno?.rejeitos,
+              mapa_rejeitos_depois: updatedChild.producao_mapa?.rejeitos,
+              rejeitos_raiz_depois: updatedChild.rejeitos
             });
+            
+            console.log(`📋 childMachinesData DEPOIS da atualização - Tamanho: ${updated.size}`);
+            
             return updated;
           });
         }
       } catch (e) {
-        console.warn('⚠️ Falha ao aplicar atualização local de rejeitos:', e);
+        console.warn('⚠️ Falha ao aplicar atualização instantânea de rejeitos:', e);
       }
     }
     

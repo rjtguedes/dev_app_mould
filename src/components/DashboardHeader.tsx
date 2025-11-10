@@ -1,5 +1,5 @@
 import React from 'react';
-import { User as UserIcon, Gauge, RefreshCcw } from 'lucide-react';
+import { User as UserIcon, Gauge, RefreshCcw, Monitor } from 'lucide-react';
 import type { User } from '@supabase/supabase-js';
 import type { Machine } from '../types/machine';
 
@@ -17,6 +17,9 @@ interface DashboardHeaderProps {
   contextoAtivo?: 'sessao' | 'turno' | 'taloes';
   onContextoChange?: (contexto: 'sessao' | 'turno' | 'taloes') => void;
   showContextButtons?: boolean;
+  // Novo: Configuração de layout
+  onOpenLayoutConfig?: () => void;
+  showLayoutButton?: boolean;
 }
 
 export function DashboardHeader({
@@ -31,7 +34,9 @@ export function DashboardHeader({
   onRefresh,
   contextoAtivo = 'sessao',
   onContextoChange,
-  showContextButtons = false
+  showContextButtons = false,
+  onOpenLayoutConfig,
+  showLayoutButton = false
 }: DashboardHeaderProps) {
   return (
     <nav className={`
@@ -106,6 +111,15 @@ export function DashboardHeader({
               <div className="px-3 py-1 bg-red-600/80 rounded-lg border border-red-500/80 ml-2">
                 <span className="text-base font-bold text-white">PARADA</span>
               </div>
+            )}
+            {showLayoutButton && onOpenLayoutConfig && (
+              <button
+                onClick={onOpenLayoutConfig}
+                className="ml-2 p-2 rounded-full bg-blue-600/40 hover:bg-blue-600/60 border border-blue-400/40 transition-colors group"
+                title="Configurar Layout de Tela"
+              >
+                <Monitor className="w-5 h-5 text-blue-200 group-hover:text-white" />
+              </button>
             )}
             {onRefresh && (
               <button

@@ -5,18 +5,22 @@ import { useSSEManager } from '../hooks/useSSEManager';
 import { useSounds } from '../hooks/useSounds';
 import { SingleMachineViewNew } from '../components/SingleMachineView-new';
 import { ChildMachineGrid } from '../components/ChildMachineGrid';
+import { Eva16StationsView } from '../components/Eva16StationsView';
 import { DashboardHeader } from '../components/DashboardHeader';
 import { Sidebar } from '../components/Sidebar';
 import { LoadingSpinner } from '../components/LoadingSpinner';
 import { ErrorMessage } from '../components/ErrorMessage';
 import { ProductionCommandsModal } from '../components/ProductionCommandsModal';
 import { JustifyStopModal } from '../components/JustifyStopModal';
+import { LayoutConfigModal } from '../components/LayoutConfigModal';
 import { apiService } from '../services/apiService';
+import { layoutStorage } from '../lib/layoutStorage';
 import type { Machine } from '../types/machine';
 import type { User } from '@supabase/supabase-js';
 import type { TalaoSelecionado } from '../types/production';
 import type { ChildMachineProduction } from '../types/production';
 import type { StopReason } from '../types/stops';
+import type { LayoutType } from '../types/layout';
 
 interface OperatorDashboardProps {
   machine: Machine;
@@ -44,6 +48,10 @@ export function OperatorDashboard({
   
   // Estado para controlar qual contexto está sendo exibido nas estações
   const [contextoAtivo, setContextoAtivo] = useState<'sessao' | 'turno' | 'taloes'>('sessao');
+  
+  // ✅ NOVO: Estado para layout de tela
+  const [currentLayout, setCurrentLayout] = useState<LayoutType>('default');
+  const [showLayoutConfig, setShowLayoutConfig] = useState(false);
 
   // Estados para fluxo de paradas
   const [showJustifyModal, setShowJustifyModal] = useState(false);
@@ -77,6 +85,31 @@ export function OperatorDashboard({
     enabled: true
   });
 
+  // ✅ NOVO: Carregar layout salvo do localStorage
+  useEffect(() => {
+    const savedLayout = layoutStorage.getLayout(machine.id_maquina);
+    if (savedLayout) {
+      setCurrentLayout(savedLayout.type);
+    } else {
+      // Detectar automaticamente layout baseado no nome da máquina
+      const defaultLayout = layoutStorage.getDefaultLayoutType(machine.nome);
+      setCurrentLayout(defaultLayout);
+    }
+  }, [machine.id_maquina, machine.nome]);
+  
+  // ✅ NOVO: Handler para mudança de layout
+  const handleLayoutChange = (newLayout: LayoutType) => {
+    setCurrentLayout(newLayout);
+    layoutStorage.saveLayout({
+      type: newLayout,
+      machineId: machine.id_maquina,
+      machineName: machine.nome,
+      timestamp: Date.now()
+    });
+    setShowLayoutConfig(false);
+    console.log(`✅ Layout alterado para: ${newLayout}`);
+  };
+  
   // Carregar produção atual do localStorage
   useEffect(() => {
     try {
@@ -190,22 +223,23 @@ export function OperatorDashboard({
   const isEvaMode = machine.nome?.toLowerCase().includes('eva') || false;
   const isMultipostos = machine.multipostos === true;
 
+  // ✅ Referência anterior para comparação
+  const prevChildProductionsRef = React.useRef<ChildMachineProduction[]>([]);
+  
   // Converter dados SSE para formato ChildMachineProduction baseado no contexto ativo
   const childProductions: ChildMachineProduction[] = useMemo(() => {
     if (childMachinesData.size === 0) return [];
 
-    console.log(`🔄 [ChildProductions] Processando ${childMachinesData.size} estações para contexto: ${contextoAtivo}`);
+    // ✅ Log reduzido: Apenas quando tamanho mudar
+    if (prevChildProductionsRef.current.length !== childMachinesData.size) {
+      console.log(`🔄 [ChildProductions] Processando ${childMachinesData.size} estações para contexto: ${contextoAtivo}`);
+    }
 
-    return Array.from(childMachinesData.entries()).map(([machineId, childData]) => {
+    const newProductions = Array.from(childMachinesData.entries()).map(([machineId, childData]) => {
       // Selecionar dados baseado no contexto ativo
       let displayData = { sinais: 0, rejeitos: 0, sinais_validos: 0 };
       
-      console.log(`📊 [Estação ${machineId}] Dados disponíveis:`, {
-        sessao: childData.sessao_operador,
-        turno: childData.producao_turno,
-        mapa: childData.producao_mapa,
-        last_updated: childData.last_updated
-      });
+      // ✅ Log reduzido: Removido log repetitivo de cada estação
       
       switch (contextoAtivo) {
         case 'sessao':
@@ -231,7 +265,7 @@ export function OperatorDashboard({
           break;
       }
 
-      console.log(`🎯 [Estação ${machineId}] Dados para contexto '${contextoAtivo}':`, displayData);
+      // ✅ Log reduzido: Removido log repetitivo de cada estação
         
         return {
         machine: {
@@ -252,12 +286,24 @@ export function OperatorDashboard({
         },
         produto: null,
         grade: null,
+          // ✅ CORRIGIDO: Passar TODOS os dados, não apenas o contexto ativo
           websocket_data: {
-            sessao_operador: {
-            sinais: displayData.sinais,
-            sinais_validos: displayData.sinais_validos,
-            rejeitos: displayData.rejeitos
-          }
+            sessao_operador: childData.sessao_operador || {
+              sinais: 0,
+              sinais_validos: 0,
+              rejeitos: 0
+            },
+            producao_turno: childData.producao_turno || {
+              sinais: 0,
+              sinais_validos: 0,
+              rejeitos: 0
+            },
+            producao_mapa: childData.producao_mapa || {
+              sinais: 0,
+              sinais_validos: 0,
+              rejeitos: 0,
+              saldo_a_produzir: 0
+            }
         },
         // Adicionar contexto para debug
         contexto_exibido: contextoAtivo,
@@ -268,39 +314,50 @@ export function OperatorDashboard({
         }
       };
     });
+    
+    // ✅ OTIMIZAÇÃO: Comparar com array anterior e retornar o mesmo se nada mudou
+    // Isso evita re-renders desnecessários de TODA a árvore de componentes
+    const prevProductions = prevChildProductionsRef.current;
+    
+    if (prevProductions.length === newProductions.length && prevProductions.length > 0) {
+      let hasChanges = false;
+      
+      for (let i = 0; i < newProductions.length; i++) {
+        const prev = prevProductions[i];
+        const next = newProductions[i];
+        
+        // Comparar apenas campos importantes que afetam a UI
+        if (
+          prev.machine.id_maquina !== next.machine.id_maquina ||
+          prev.stats.produzido !== next.stats.produzido ||
+          prev.stats.rejeitos !== next.stats.rejeitos ||
+          prev.websocket_data?.sessao_operador?.sinais !== next.websocket_data?.sessao_operador?.sinais ||
+          prev.websocket_data?.sessao_operador?.rejeitos !== next.websocket_data?.sessao_operador?.rejeitos ||
+          prev.websocket_data?.producao_turno?.sinais !== next.websocket_data?.producao_turno?.sinais ||
+          prev.websocket_data?.producao_turno?.rejeitos !== next.websocket_data?.producao_turno?.rejeitos ||
+          prev.websocket_data?.producao_mapa?.sinais !== next.websocket_data?.producao_mapa?.sinais ||
+          prev.websocket_data?.producao_mapa?.rejeitos !== next.websocket_data?.producao_mapa?.rejeitos
+        ) {
+          hasChanges = true;
+          console.log(`🔄 Mudança detectada em childProductions - Estação ${next.machine.id_maquina}`);
+          break;
+        }
+      }
+      
+      if (!hasChanges) {
+        console.log(`⏭️ Nenhuma mudança detectada em childProductions, retornando array anterior (evita re-render de toda a página)`);
+        return prevProductions; // ✅ Retornar MESMO array (mesma referência)
+      }
+    }
+    
+    // Tem mudanças, armazenar novo array
+    prevChildProductionsRef.current = newProductions;
+    console.log(`✅ childProductions atualizado com mudanças reais`);
+    return newProductions;
   }, [childMachinesData, machine.id_maquina, contextoAtivo]);
 
-  // Debug completo dos dados recebidos
-  useEffect(() => {
-    console.log(`🔍 Dashboard DEBUG - Machine Info:`, {
-      machine_id: machine.id_maquina,
-      machine_name: machine.nome,
-      machine_multipostos: machine.multipostos,
-      isEvaMode,
-      isMultipostos,
-      machineData_exists: !!machineData,
-      childMachinesData_size: childMachinesData.size,
-      contexto_ativo: contextoAtivo
-    });
-
-    // Log das máquinas filhas com contexto
-    if (childMachinesData.size > 0) {
-      console.log(`🏭 Dashboard: ${childMachinesData.size} máquinas filhas recebidas via SSE (contexto: ${contextoAtivo}):`, 
-        Array.from(childMachinesData.entries()).map(([id, data]) => ({
-          id,
-          nome: data.nome,
-          status: data.status,
-          contexto_sessao: data.sessao_operador,
-          contexto_turno: data.producao_turno,
-          contexto_taloes: data.producao_mapa
-        }))
-      );
-    } else {
-      console.log(`⚠️ Dashboard: Nenhuma máquina filha encontrada`);
-    }
-
-    console.log(`🎯 Tipo de máquina detectado: EVA=${isEvaMode}, Multipostos=${isMultipostos}`);
-  }, [childMachinesData, isEvaMode, isMultipostos, machineData, machine, contextoAtivo]);
+  // ✅ Debug REDUZIDO: Removidos logs repetitivos
+  // Apenas logs de otimização já mostram as mudanças importantes
 
   // 🔊 Detectar novas paradas via SSE e tocar som
   useEffect(() => {
@@ -375,17 +432,17 @@ export function OperatorDashboard({
         contexto_ativo: contextoAtivo
       });
       
-      // Fazer chamada direta para a API com a estação específica
-      const result = await apiService.adicionarRejeitos({
-        id_maquina: estacaoId, // ID da estação específica
+      // ✅ CORRIGIDO: Usar adicionarRejeitos do useSSEManager (tem atualização instantânea)
+      const result = await adicionarRejeitos({
+        id_maquina: estacaoId, // ✅ Passar ID da estação específica
         quantidade: 1,
         id_motivo_rejeito: 1
       });
 
       if (result.success) {
         console.log(`✅ Rejeito adicionado com sucesso para estação ${estacaoId}`);
-        console.log(`🔄 Aguardando atualização via SSE...`);
-        // A atualização virá via SSE através do evento 'rejeitos_adicionados'
+        console.log(`✅ Contador atualizado instantaneamente (sem aguardar SSE)`);
+        // ✅ A atualização instantânea já foi aplicada pelo useSSEManager!
               } else {
         console.error(`❌ Erro ao adicionar rejeito para estação ${estacaoId}:`, result.error);
         // TODO: Mostrar erro para usuário
@@ -521,9 +578,41 @@ export function OperatorDashboard({
     try {
       console.log('🎯 Iniciando produção com mapa:', { mapaId, taloes, isMultipostos, isEvaMode });
 
+      // ✅ Para máquinas multipostos, determinar o id_maquina correto (estação filha)
+      let targetMachineId = machine.id_maquina; // Default: máquina raiz
+      
+      if (isMultipostos && taloes.length > 0) {
+        // ✅ VALIDAÇÃO: Todos os talões devem ser para a mesma estação
+        const estacaoNumero = taloes[0].estacao_numero;
+        const todosMesmaEstacao = taloes.every(t => t.estacao_numero === estacaoNumero);
+        
+        if (!todosMesmaEstacao) {
+          const estacoesDistintas = [...new Set(taloes.map(t => t.estacao_numero))];
+          console.error('❌ ERRO: Talões selecionados para estações diferentes:', estacoesDistintas);
+          throw new Error(`Não é possível iniciar produção em múltiplas estações simultaneamente. Selecione talões apenas da estação ${estacaoNumero}.`);
+        }
+        
+        // Buscar a estação filha correspondente no childMachinesData
+        const estacaoFilha = Array.from(childMachinesData.values()).find(
+          child => child.numero_estacao === estacaoNumero
+        );
+        
+        if (estacaoFilha && estacaoFilha.id_maquina) {
+          targetMachineId = estacaoFilha.id_maquina;
+          console.log(`✅ Máquina multiposto: Usando id_maquina da estação ${estacaoNumero}:`, {
+            estacao_nome: estacaoFilha.nome,
+            id_maquina_estacao: targetMachineId,
+            id_maquina_raiz: machine.id_maquina,
+            total_taloes: taloes.length
+          });
+        } else {
+          console.warn(`⚠️ Estação ${estacaoNumero} não encontrada em childMachinesData, usando máquina raiz`);
+        }
+      }
+
       // ✅ Preparar payload unificado
       const payload = {
-        id_maquina: machine.id_maquina,
+        id_maquina: targetMachineId, // ✅ Usar ID da estação filha para multipostos
         id_mapa: mapaId,
         taloes: taloes.map(t => ({
           id_talao: t.id_talao,
@@ -823,12 +912,15 @@ export function OperatorDashboard({
         contextoAtivo={contextoAtivo}
         onContextoChange={setContextoAtivo}
         showContextButtons={true} // Sempre mostrar botões de contexto
+        // ✅ NOVO: Props de configuração de layout
+        onOpenLayoutConfig={() => setShowLayoutConfig(true)}
+        showLayoutButton={isMultipostos} // Mostrar apenas para multipostos
       />
 
       {/* Main Content */}
       <main className={`flex-1 transition-all duration-300 ${sidebarCollapsed ? 'ml-16' : 'ml-64'} pt-16 p-6`}>
-        {/* Indicador de Produção Atual - BASEADO NO BACKEND (SSE) */}
-        {machineData?.contexto?.producao_mapa && (
+        {/* Indicador de Produção Atual - BASEADO NO BACKEND (SSE) - Esconder no layout EVA 16 */}
+        {machineData?.contexto?.producao_mapa && !(currentLayout === 'eva_16_stations' && isMultipostos) && (
           <div className="mb-4 bg-green-600/20 border border-green-400/40 rounded-xl p-4 text-sm text-green-100 flex items-center justify-between">
             <div className="flex items-center gap-3">
               <span className="px-2 py-1 rounded-lg bg-green-500/30 border border-green-400/60 font-bold uppercase text-xs">Em Produção</span>
@@ -873,24 +965,34 @@ export function OperatorDashboard({
         )}
 
 
-        {/* Machine View */}
-        <SingleMachineViewNew
-          machineData={machineData}
-          contextoAtivo={contextoAtivo}
-          onAddReject={async (gradeId) => {
-            console.log('🔄 Adicionando rejeito para grade:', gradeId);
-            await handleAddRejeito();
-          }}
-          onAddRejeito={handleAddRejeito}
-          statusParada={machineData?.contexto?.parada_ativa !== null}
-          onEncerrarParcial={handleEncerrarParcial}
-          onEncerrarTotal={handleEncerrarTotal}
-        />
+        {/* Machine View - Esconder quando usar layout EVA 16 */}
+        {!(currentLayout === 'eva_16_stations' && isMultipostos) && (
+          <SingleMachineViewNew
+            machineData={machineData}
+            contextoAtivo={contextoAtivo}
+            onAddReject={async (gradeId) => {
+              console.log('🔄 Adicionando rejeito para grade:', gradeId);
+              await handleAddRejeito();
+            }}
+            onAddRejeito={handleAddRejeito}
+            statusParada={machineData?.contexto?.parada_ativa !== null}
+            onEncerrarParcial={handleEncerrarParcial}
+            onEncerrarTotal={handleEncerrarTotal}
+          />
+        )}
 
-        {/* Child Machines (Estações) - Interface Especializada */}
+        {/* Child Machines (Estações) - Interface com Sistema de Layout Configurável */}
         {childProductions.length > 0 && (
           <div className="mt-6">
-            {isEvaMode ? (
+            {currentLayout === 'eva_16_stations' ? (
+              // ✅ NOVO: Layout EVA 16 Estações (2 colunas ESQUERDA/DIREITA)
+              <Eva16StationsView
+                machineData={machineData}
+                childProductions={childProductions}
+                contextoAtivo={contextoAtivo}
+                onAddReject={handleAddRejeitoEstacao}
+              />
+            ) : isEvaMode ? (
               // EVA Mode - Layout especializado para máquinas EVA
               <div className="space-y-4">
                 <div className="bg-black/20 rounded-xl border border-white/30 shadow-xl backdrop-blur-sm p-6">
@@ -1035,6 +1137,15 @@ export function OperatorDashboard({
           stopReasons={stopReasons}
           machineGroup={null} // TODO: Buscar grupo da máquina se necessário
           isManualStop={isManualStop}
+        />
+        
+        {/* ✅ NOVO: Modal de Configuração de Layout */}
+        <LayoutConfigModal
+          isOpen={showLayoutConfig}
+          onClose={() => setShowLayoutConfig(false)}
+          currentLayout={currentLayout}
+          machineName={machine.nome}
+          onSelectLayout={handleLayoutChange}
         />
 
         {/* Justificar Parada agora na Sidebar (removido botão flutuante) */}
