@@ -29,7 +29,7 @@ export const LayoutConfigModal = React.memo(function LayoutConfigModal({
       name: 'Padrão (Cards)',
       description: 'Layout padrão com cards individuais para cada estação',
       icon: Grid3x3,
-      recommended: !machineName.toLowerCase().includes('eva')
+      recommended: !machineName.toLowerCase().includes('eva') && !machineName.toLowerCase().includes('rotativa')
     },
     {
       type: 'eva_16_stations' as LayoutType,
@@ -37,6 +37,13 @@ export const LayoutConfigModal = React.memo(function LayoutConfigModal({
       description: 'Layout otimizado para EVA com 2 colunas (ESQUERDA/DIREITA) e 8 postos cada',
       icon: Monitor,
       recommended: machineName.toLowerCase().includes('eva')
+    },
+    {
+      type: 'rotativas' as LayoutType,
+      name: 'Rotativas',
+      description: 'Layout em 2 colunas automáticas que divide os postos igualmente. Ideal para máquinas rotativas',
+      icon: Monitor,
+      recommended: machineName.toLowerCase().includes('rotativa')
     }
   ];
   

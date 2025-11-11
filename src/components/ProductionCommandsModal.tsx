@@ -408,52 +408,52 @@ export const ProductionCommandsModal = React.memo(function ProductionCommandsMod
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-3 z-50">
-      <div className="bg-white rounded-2xl max-w-7xl w-full max-h-[96vh] overflow-hidden shadow-[0_20px_60px_rgba(0,0,0,0.6)] border border-white/10">
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-md flex items-center justify-center p-4 z-50">
+      <div className="bg-gradient-to-br from-blue-900 via-blue-800 to-indigo-900 rounded-3xl max-w-7xl w-full max-h-[96vh] overflow-hidden shadow-[0_30px_90px_rgba(0,0,0,0.8)] border border-blue-400/30">
         {/* Header */}
-        <div className="flex items-center justify-between p-5 bg-gradient-to-r from-indigo-600 via-blue-600 to-purple-600 text-white rounded-t-2xl border-b border-white/10">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-white/15 rounded-lg flex items-center justify-center shadow-inner">
-              <Package className="w-5 h-5" />
+        <div className="flex items-center justify-between p-6 bg-gradient-to-r from-blue-600/40 via-indigo-600/40 to-purple-600/40 backdrop-blur-sm border-b border-blue-400/30">
+          <div className="flex items-center gap-4">
+            <div className="w-14 h-14 bg-blue-500/30 rounded-xl flex items-center justify-center shadow-lg border border-blue-400/30">
+              <Package className="w-7 h-7 text-blue-200" />
             </div>
             <div>
-              <h1 className="text-xl font-extrabold tracking-tight drop-shadow">
-                {step === 'mapas' && 'Escolher Trabalho'}
-                {step === 'detalhes' && 'Selecionar Produtos'}
-                {step === 'confirmacao' && 'Confirmar Início'}
+              <h1 className="text-2xl font-bold tracking-tight text-white">
+                {step === 'mapas' && '📋 Escolher Trabalho'}
+                {step === 'detalhes' && '🎯 Selecionar Produtos'}
+                {step === 'confirmacao' && '✅ Confirmar Início'}
               </h1>
-              <p className="text-blue-100 text-xs opacity-95">
-                {step === 'mapas' && 'Toque no trabalho que deseja produzir'}
-                {step === 'detalhes' && 'Toque nos produtos para selecionar'}
-                {step === 'confirmacao' && 'Verifique e confirme o início'}
+              <p className="text-blue-200 text-sm mt-1">
+                {step === 'mapas' && 'Selecione o trabalho que deseja produzir'}
+                {step === 'detalhes' && 'Selecione os produtos e navegue entre estações'}
+                {step === 'confirmacao' && 'Verifique os detalhes e confirme'}
               </p>
             </div>
           </div>
           {/* Tag Em Produção */}
           {storedProduction && storedProduction.id_maquina === machineId && (
-            <div className="hidden md:flex items-center gap-2 px-3 py-1.5 bg-green-500/20 border border-green-400/40 rounded-lg">
-              <span className="text-green-200 text-xs font-bold uppercase">Em Produção</span>
-              <span className="text-green-100 text-xs">Mapa #{storedProduction.id_mapa}</span>
+            <div className="hidden md:flex items-center gap-2 px-4 py-2 bg-green-500/20 border border-green-400/40 rounded-lg backdrop-blur-sm">
+              <span className="text-green-300 text-sm font-bold uppercase">Em Produção</span>
+              <span className="text-green-200 text-sm">Mapa #{storedProduction.id_mapa}</span>
             </div>
           )}
           <button
             onClick={handleClose}
-            className="w-10 h-10 bg-white/15 hover:bg-white/25 rounded-lg transition-all duration-200 flex items-center justify-center border border-white/20"
+            className="w-12 h-12 bg-white/10 hover:bg-white/20 rounded-xl transition-all duration-200 flex items-center justify-center border border-white/20"
           >
-            <X className="w-5 h-5" />
+            <X className="w-6 h-6 text-white" />
           </button>
         </div>
 
         {/* Content */}
-        <div className="p-5 overflow-y-auto max-h-[calc(96vh-180px)]">
+        <div className="p-6 overflow-y-auto max-h-[calc(96vh-220px)]">
           {error && (
-            <div className="mb-4 rounded-xl border border-red-400/40 bg-red-600/10 text-red-900 p-4 flex items-start gap-3">
+            <div className="mb-4 rounded-xl border-2 border-red-400/50 bg-red-500/20 backdrop-blur-sm text-white p-5 flex items-start gap-4 shadow-lg">
               <div className="mt-0.5">
-                <AlertCircle className="w-5 h-5 text-red-600" />
+                <AlertCircle className="w-6 h-6 text-red-300" />
               </div>
               <div>
-                <p className="font-bold">Erro</p>
-                <p className="text-sm opacity-90">{error}</p>
+                <p className="font-bold text-lg text-red-200">⚠️ Erro</p>
+                <p className="text-sm text-red-100 mt-1">{error}</p>
               </div>
             </div>
           )}
@@ -598,51 +598,63 @@ export const ProductionCommandsModal = React.memo(function ProductionCommandsMod
               })()}
 
               {/* Info do Trabalho */}
-              <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl p-3 border border-blue-200">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 bg-blue-500 rounded-lg flex items-center justify-center">
-                    <Package className="w-5 h-5 text-white" />
+              <div className="bg-blue-600/30 backdrop-blur-sm rounded-xl p-5 border-2 border-blue-400/40 shadow-lg">
+                <div className="flex items-center gap-4">
+                  <div className="w-14 h-14 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-xl flex items-center justify-center shadow-md">
+                    <Package className="w-7 h-7 text-white" />
                   </div>
                   <div>
-                    <h2 className="text-lg font-bold text-gray-900">{selectedMapa.nome}</h2>
-                    <p className="text-blue-700 text-sm">Selecione os produtos (um por vez). Use as setas para navegar entre as estações.</p>
+                    <h2 className="text-xl font-bold text-white mb-1">{selectedMapa.nome}</h2>
+                    <p className="text-blue-200 text-sm font-medium">📌 Selecione os produtos e use as setas ← → para navegar entre estações</p>
                   </div>
                 </div>
               </div>
 
               {/* Navegação por Estações */}
               {selectedMapa.estacoes.length > 0 && (
-                <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-                  {/* Header da Estação com Navegação */}
-                  <div className="bg-gray-50 px-4 py-2 border-b border-gray-100 flex items-center justify-between">
+                <div className="bg-blue-800/40 backdrop-blur-sm rounded-2xl border-2 border-blue-400/30 overflow-hidden shadow-xl">
+                  {/* Header da Estação com Navegação - BOTÕES GRANDES */}
+                  <div className="bg-blue-700/30 px-6 py-4 border-b-2 border-blue-400/30 flex items-center justify-between gap-4">
+                    {/* Botão Anterior - GRANDE */}
                     <button
-                      className="px-3 py-1.5 rounded-lg bg-gray-200 hover:bg-gray-300 text-gray-800 text-sm disabled:opacity-50"
+                      className="w-20 h-20 rounded-2xl bg-gradient-to-br from-blue-500 to-blue-600 hover:from-blue-400 hover:to-blue-500 text-white text-4xl font-black shadow-xl hover:shadow-2xl disabled:opacity-30 disabled:cursor-not-allowed transition-all duration-200 transform hover:scale-105 active:scale-95 border-2 border-blue-300/30 flex items-center justify-center"
                       onClick={() => setCurrentStationIndex(i => Math.max(0, i - 1))}
                       disabled={currentStationIndex === 0}
                       aria-label="Estação anterior"
+                      title="Estação anterior"
                     >
                       ←
                     </button>
-                    <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 bg-blue-500 text-white rounded-lg flex items-center justify-center font-bold text-sm">
+                    
+                    {/* Indicador da Estação Atual */}
+                    <div className="flex-1 flex items-center justify-center gap-4 bg-blue-600/40 backdrop-blur-sm rounded-xl px-6 py-4 border border-blue-300/30">
+                      <div className="w-16 h-16 bg-gradient-to-br from-indigo-500 to-purple-600 text-white rounded-xl flex items-center justify-center font-black text-3xl shadow-lg border-2 border-white/30">
                         {selectedMapa.estacoes[currentStationIndex].numero_estacao}
                       </div>
-                      <h3 className="text-sm font-bold text-gray-900">
-                        Estação {selectedMapa.estacoes[currentStationIndex].numero_estacao}
-                      </h3>
+                      <div>
+                        <h3 className="text-2xl font-black text-white tracking-tight">
+                          Estação {selectedMapa.estacoes[currentStationIndex].numero_estacao}
+                        </h3>
+                        <p className="text-blue-200 text-sm font-medium">
+                          {selectedMapa.estacoes[currentStationIndex].taloes.length} produto(s) disponível(eis)
+                        </p>
+                      </div>
                     </div>
+                    
+                    {/* Botão Próximo - GRANDE */}
                     <button
-                      className="px-3 py-1.5 rounded-lg bg-gray-200 hover:bg-gray-300 text-gray-800 text-sm disabled:opacity-50"
+                      className="w-20 h-20 rounded-2xl bg-gradient-to-br from-blue-500 to-blue-600 hover:from-blue-400 hover:to-blue-500 text-white text-4xl font-black shadow-xl hover:shadow-2xl disabled:opacity-30 disabled:cursor-not-allowed transition-all duration-200 transform hover:scale-105 active:scale-95 border-2 border-blue-300/30 flex items-center justify-center"
                       onClick={() => setCurrentStationIndex(i => Math.min(selectedMapa.estacoes.length - 1, i + 1))}
                       disabled={currentStationIndex === selectedMapa.estacoes.length - 1}
                       aria-label="Próxima estação"
+                      title="Próxima estação"
                     >
                       →
                     </button>
                   </div>
 
-                  {/* Produtos da Estação atual - FORMATO LISTA */}
-                  <div className="p-3">
+                  {/* Produtos da Estação atual - FORMATO LISTA MINIMALISTA */}
+                  <div className="p-4 bg-gradient-to-br from-blue-900/40 to-indigo-900/40">
                     <div className="space-y-2">
                       {selectedMapa.estacoes[currentStationIndex].taloes.map(talao => {
                         const isSelected = selectedTaloes.some(t => t.id_talao === talao.id);
@@ -651,9 +663,8 @@ export const ProductionCommandsModal = React.memo(function ProductionCommandsMod
                         const isConcluidaParcial = talao.concluida_parcial === true && !isConcluidaTotal;
                         const isFinalizada = isConcluidaTotal || isConcluidaParcial;
                         const isAlocadoOutraMaquina = isIniciada && talao.id_maquina && talao.id_maquina !== machineId;
-                        const isDisabled = isConcluidaTotal || isAlocadoOutraMaquina; // Parcial NÃO é disabled, pode retomar!
+                        const isDisabled = isConcluidaTotal || isAlocadoOutraMaquina;
                         
-                        // Log de debug para cada talão
                         if (process.env.NODE_ENV === 'development') {
                           console.log(`🔍 Talão ${talao.id}:`, {
                             isIniciada,
@@ -680,204 +691,164 @@ export const ProductionCommandsModal = React.memo(function ProductionCommandsMod
                                 });
                               }
                             }}
-                            className={`relative p-4 rounded-xl transition-all duration-200 flex items-center gap-4 ${
+                            className={`relative rounded-lg transition-all duration-150 backdrop-blur-sm overflow-hidden ${
                               isConcluidaTotal
-                                ? 'bg-gradient-to-r from-gray-100 to-slate-100 border-2 border-gray-300 opacity-60 cursor-not-allowed'
+                                ? 'bg-gray-600/20 border border-gray-400/40 opacity-60 cursor-not-allowed'
                                 : isConcluidaParcial
-                                ? 'bg-gradient-to-r from-yellow-50 to-orange-50 border-2 border-yellow-400 shadow-md cursor-default'
+                                ? 'bg-yellow-500/10 border border-yellow-400/50 cursor-default'
                                 : isAlocadoOutraMaquina
-                                ? 'bg-gradient-to-r from-yellow-50 to-amber-50 border-2 border-yellow-300 opacity-75 cursor-not-allowed'
+                                ? 'bg-yellow-500/10 border border-yellow-400/40 opacity-75 cursor-not-allowed'
                                 : isSelected
-                                ? 'bg-gradient-to-r from-green-50 to-emerald-50 border-2 border-green-400 shadow-lg cursor-pointer hover:shadow-xl'
+                                ? 'bg-green-500/15 border border-green-400/60 cursor-pointer'
                                 : isIniciada
-                                ? 'bg-gradient-to-r from-blue-50 to-cyan-50 border-2 border-blue-300 shadow-md cursor-pointer hover:border-blue-400 hover:shadow-lg'
-                                : 'bg-white border-2 border-gray-200 cursor-pointer hover:border-indigo-400 hover:shadow-lg'
-                            } ${!isDisabled && !isConcluidaParcial && 'transform hover:scale-[1.01] active:scale-[0.99]'}`}
+                                ? 'bg-blue-500/15 border border-blue-400/50 cursor-pointer hover:border-blue-300/70'
+                                : 'bg-white/5 border border-blue-300/30 cursor-pointer hover:border-indigo-400/50'
+                            }`}
                           >
-                            {/* Indicador de Status à Esquerda */}
-                            <div className="flex-shrink-0">
-                              {isConcluidaTotal ? (
-                                <div className="w-12 h-12 bg-gradient-to-br from-gray-400 to-slate-500 rounded-xl flex items-center justify-center shadow-inner">
-                                  <CheckCircle2 className="w-6 h-6 text-white" />
-                                </div>
-                              ) : isConcluidaParcial ? (
-                                <div className="w-12 h-12 bg-gradient-to-br from-yellow-500 to-orange-600 rounded-xl flex items-center justify-center shadow-inner">
-                                  <AlertCircle className="w-6 h-6 text-white" />
-                                </div>
-                              ) : isAlocadoOutraMaquina ? (
-                                <div className="w-12 h-12 bg-gradient-to-br from-yellow-400 to-amber-500 rounded-xl flex items-center justify-center shadow-inner">
-                                  <AlertCircle className="w-6 h-6 text-white" />
-                                </div>
-                              ) : isSelected ? (
-                                <div className="w-12 h-12 bg-gradient-to-br from-green-500 to-emerald-600 rounded-xl flex items-center justify-center shadow-inner">
-                                  <CheckCircle2 className="w-6 h-6 text-white" />
-                                </div>
-                              ) : isIniciada ? (
-                                <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-cyan-600 rounded-xl flex items-center justify-center shadow-inner">
-                                  <Play className="w-6 h-6 text-white" />
-                                </div>
-                              ) : (
-                                <div className="w-12 h-12 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-xl flex items-center justify-center shadow-inner">
-                                  <Package className="w-6 h-6 text-white" />
-                              </div>
-                            )}
-                            </div>
-
-                            {/* Informações do Talão */}
-                            <div className="flex-1 min-w-0">
-                              {/* Linha 1: Produto e TAMANHO GIGANTE */}
-                              <div className="flex items-center gap-3 mb-3">
-                                <div className="bg-gradient-to-r from-orange-100 to-amber-100 px-4 py-2 rounded-lg border-l-4 border-orange-500">
-                                  <p className="font-bold text-orange-900 text-lg">
-                                    {talao.talao_referencia}
-                                  </p>
-                                </div>
-                                
-                                {/* TAMANHO - GIGANTE E DESTAQUE */}
-                                <div className="bg-gradient-to-br from-indigo-600 to-purple-700 px-6 py-3 rounded-xl shadow-lg border-4 border-white">
-                                  <div className="flex items-center gap-2">
-                                    <span className="text-white text-sm font-bold">TAMANHO</span>
-                                    <span className="text-white text-3xl font-black tracking-wider">{talao.talao_tamanho}</span>
-                                  </div>
-                                </div>
-                                
-                                {/* Cor - se disponível */}
-                                {(talao as any).descricao_cor && (
-                                  <div className="bg-gradient-to-r from-pink-100 to-rose-100 px-3 py-2 rounded-lg border border-pink-300">
-                                    <div className="flex items-center gap-1.5">
-                                      <span className="text-pink-600">🎨</span>
-                                      <span className="font-bold text-pink-900 text-sm">{(talao as any).descricao_cor}</span>
-                                    </div>
-                                  </div>
+                            {/* Lista Minimalista - Uma Linha por Talão */}
+                            <div className="px-3 py-2 flex items-center justify-between gap-3">
+                              
+                              {/* Ícone de Status */}
+                              <div className="flex-shrink-0">
+                                {isConcluidaTotal ? (
+                                  <CheckCircle2 className="w-4 h-4 text-gray-300" />
+                                ) : isConcluidaParcial ? (
+                                  <AlertCircle className="w-4 h-4 text-yellow-300" />
+                                ) : isAlocadoOutraMaquina ? (
+                                  <AlertCircle className="w-4 h-4 text-yellow-300" />
+                                ) : isSelected ? (
+                                  <CheckCircle2 className="w-4 h-4 text-green-300" />
+                                ) : isIniciada ? (
+                                  <Play className="w-4 h-4 text-blue-300" />
+                                ) : (
+                                  <Package className="w-4 h-4 text-blue-300" />
                                 )}
                               </div>
 
-                              {/* Linha 2: Quantidade, Tempo de Ciclo e Tempo Total */}
-                              <div className="flex items-center gap-4 text-sm mb-2">
-                                <div className="flex items-center gap-1.5 bg-purple-50 px-3 py-1.5 rounded-lg border border-purple-200">
-                                  <span className="text-purple-600 font-bold">📦</span>
-                                  <span className="font-bold text-purple-900">{talao.quantidade.toLocaleString()} pçs</span>
+                              {/* Informações em Linha */}
+                              <div className="flex-1 flex items-center gap-3 text-xs">
+                                {/* Referência */}
+                                <div className="bg-blue-800/40 px-2 py-1 rounded border border-blue-400/30 min-w-[80px]">
+                                  <span className="text-white font-bold">{talao.talao_referencia}</span>
+                                </div>
+
+                                {/* Tamanho - Destaque */}
+                                <div className="bg-indigo-600/50 px-3 py-1 rounded border border-indigo-400/50 min-w-[60px] text-center">
+                                  <span className="text-white font-black text-base">{talao.talao_tamanho}</span>
+                                </div>
+
+                                {/* Cor */}
+                                {(talao as any).descricao_cor && (
+                                  <div className="bg-blue-800/40 px-2 py-1 rounded border border-blue-400/30">
+                                    <span className="text-blue-200 font-medium">{(talao as any).descricao_cor}</span>
+                                  </div>
+                                )}
+
+                                {/* Quantidade */}
+                                <div className="bg-blue-800/40 px-2 py-1 rounded border border-blue-400/30 flex items-center gap-1">
+                                  <span className="text-blue-200">📦</span>
+                                  <span className="text-white font-semibold">{talao.quantidade.toLocaleString()}</span>
                                   {talao.quantidade_produzida !== undefined && talao.quantidade_produzida > 0 && (
-                                    <span className="text-green-700 font-semibold ml-1">
-                                      ({talao.quantidade_produzida.toLocaleString()} OK)
+                                    <span className="text-green-300 text-[10px]">
+                                      ({talao.quantidade_produzida.toLocaleString()})
                                     </span>
                                   )}
                                 </div>
-                                
-                                <div className="flex items-center gap-1.5 bg-blue-50 px-3 py-1.5 rounded-lg border border-blue-200">
-                                  <Clock className="w-4 h-4 text-blue-600" />
-                                  <span className="font-bold text-blue-900">{talao.tempo_ciclo_segundos}s</span>
-                                  <span className="text-blue-700 text-xs">/ciclo</span>
+
+                                {/* Tempo de Ciclo */}
+                                <div className="bg-blue-800/40 px-2 py-1 rounded border border-blue-400/30 flex items-center gap-1">
+                                  <Clock className="w-3 h-3 text-blue-300" />
+                                  <span className="text-white font-semibold">{talao.tempo_ciclo_segundos}s</span>
                                 </div>
-                                
-                                {/* Tempo Total Previsto */}
+
+                                {/* Tempo Total */}
                                 {talao.tempo_ciclo_segundos && talao.quantidade && (
-                                  <div className="flex items-center gap-1.5 bg-emerald-50 px-3 py-1.5 rounded-lg border border-emerald-200">
-                                    <span className="text-emerald-600 font-bold">⏱️</span>
-                                    <span className="font-bold text-emerald-900">
+                                  <div className="bg-blue-800/40 px-2 py-1 rounded border border-blue-400/30">
+                                    <span className="text-blue-200">⏱️</span>
+                                    <span className="text-white font-semibold ml-1">
                                       {Math.ceil((talao.tempo_ciclo_segundos * talao.quantidade) / 60)}min
                                     </span>
-                                    <span className="text-emerald-700 text-xs">previsto</span>
                                   </div>
                                 )}
-                                
+
+                                {/* Rejeitos */}
                                 {talao.rejeitos !== undefined && talao.rejeitos > 0 && (
-                                  <div className="flex items-center gap-1.5 bg-red-50 px-3 py-1.5 rounded-lg border border-red-200">
-                                    <span className="text-red-600 font-bold">❌</span>
-                                    <span className="font-bold text-red-900">{talao.rejeitos}</span>
+                                  <div className="bg-red-800/40 px-2 py-1 rounded border border-red-400/30 flex items-center gap-1">
+                                    <span className="text-red-300">❌</span>
+                                    <span className="text-red-200 font-semibold">{talao.rejeitos}</span>
+                                  </div>
+                                )}
+
+                                {/* Matriz */}
+                                {(talao as any).id_matriz && (
+                                  <div className="bg-blue-800/40 px-2 py-1 rounded border border-blue-400/30 flex items-center gap-1">
+                                    <span className="text-blue-200 text-[10px]">🔧</span>
+                                    <span className="text-white font-medium">#{(talao as any).id_matriz}</span>
+                                    {(talao as any).matriz_multi_tamanhos && (
+                                      <span className="text-cyan-300 text-[9px]">(M)</span>
+                                    )}
+                                  </div>
+                                )}
+
+                                {/* Cavidades */}
+                                {(talao as any).qt_cavidades_matriz_simples && (
+                                  <div className="bg-blue-800/40 px-2 py-1 rounded border border-blue-400/30">
+                                    <span className="text-blue-200 text-[10px]">🔲</span>
+                                    <span className="text-white font-medium ml-1">{(talao as any).qt_cavidades_matriz_simples}</span>
                                   </div>
                                 )}
                               </div>
-                              
-                              {/* Linha 3: Informações da Matriz */}
-                              {((talao as any).id_matriz || (talao as any).qt_cavidades_matriz_simples) && (
-                                <div className="flex items-center gap-3 text-xs">
-                                  {(talao as any).id_matriz && (
-                                    <div className="flex items-center gap-1.5 text-gray-600">
-                                      <span className="font-semibold">🔧 Matriz:</span>
-                                      <span className="font-bold text-gray-900">#{(talao as any).id_matriz}</span>
-                                      {(talao as any).matriz_multi_tamanhos && (
-                                        <span className="text-blue-600 font-semibold">(Multi)</span>
-                                      )}
-                                    </div>
-                                  )}
-                                  {(talao as any).qt_cavidades_matriz_simples && (
-                                    <div className="flex items-center gap-1.5 text-gray-600">
-                                      <span className="font-semibold">🔲 Cavidades:</span>
-                                      <span className="font-bold text-gray-900">{(talao as any).qt_cavidades_matriz_simples}</span>
-                                    </div>
-                                  )}
-                                </div>
-                              )}
-                            </div>
 
-                            {/* Status Badge à Direita */}
-                            <div className="flex-shrink-0 flex flex-col items-end gap-2">
-                              {/* Talão concluído parcialmente - PODE RETOMAR */}
-                              {talao.concluida_parcial && !talao.concluida_total && (
-                                <>
-                                  <div className="px-3 py-1.5 bg-gradient-to-r from-yellow-600 to-amber-700 text-white rounded-full font-bold text-xs shadow-md uppercase">
-                                    ⚠️ Parcial - Saldo: {talao.saldo_pendente || (talao.quantidade - (talao.quantidade_produzida || 0))}
-                                  </div>
+                              {/* Status e Botões de Ação */}
+                              <div className="flex-shrink-0 flex items-center gap-2">
+                                {/* Badge de Status */}
+                                <div className={`px-2 py-1 rounded text-[10px] font-bold uppercase ${
+                                  isConcluidaTotal
+                                    ? 'bg-gray-600/40 text-gray-300'
+                                    : isConcluidaParcial
+                                    ? 'bg-yellow-600/40 text-yellow-300'
+                                    : isAlocadoOutraMaquina
+                                    ? 'bg-yellow-600/40 text-yellow-300'
+                                    : isSelected
+                                    ? 'bg-green-600/40 text-green-300'
+                                    : isIniciada
+                                    ? 'bg-blue-600/40 text-blue-300'
+                                    : 'bg-blue-700/30 text-blue-300'
+                                }`}>
+                                  {isConcluidaTotal && '✓ Final'}
+                                  {isConcluidaParcial && `⚠ Parcial`}
+                                  {isAlocadoOutraMaquina && `🔒 M${talao.id_maquina}`}
+                                  {!isFinalizada && !isAlocadoOutraMaquina && isSelected && '✓ Sel'}
+                                  {!isFinalizada && !isAlocadoOutraMaquina && isIniciada && !isSelected && '▶ Prod'}
+                                  {!isFinalizada && !isAlocadoOutraMaquina && !isIniciada && !isSelected && '○ Disp'}
+                                </div>
+
+                                {/* Botões de Ação Compactos */}
+                                {talao.concluida_parcial && !talao.concluida_total && (
                                   <button
                                     onClick={(e) => {
                                       e.stopPropagation();
                                       handleRetomarTalao(talao, selectedMapa.estacoes[currentStationIndex].numero_estacao);
                                     }}
-                                    className="px-4 py-2 bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white text-xs rounded-lg font-bold transition-all shadow-md hover:shadow-lg active:scale-95"
-                                    title="Retomar produção deste talão"
+                                    className="px-2 py-1 bg-blue-500 hover:bg-blue-600 text-white text-[10px] rounded font-bold transition-all"
+                                    title="Retomar"
                                   >
-                                    ▶️ Retomar
+                                    ▶️
                                   </button>
-                                </>
-                              )}
-                              
-                              {/* Talão concluído totalmente */}
-                              {talao.concluida_total && (
-                                <div className="px-3 py-1.5 bg-gradient-to-r from-gray-600 to-slate-700 text-white rounded-full font-bold text-xs shadow-md uppercase">
-                                  ✓ Finalizado
-                                </div>
-                              )}
-                              
-                              {/* Talão alocado em outra máquina */}
-                              {!isFinalizada && isAlocadoOutraMaquina && (
-                                <div className="px-3 py-1.5 bg-gradient-to-r from-yellow-600 to-amber-700 text-white rounded-full font-bold text-xs shadow-md uppercase">
-                                  🔒 Máquina {talao.id_maquina}
-                                </div>
-                              )}
-                              
-                              {/* Talão em produção - COM BOTÃO FINALIZAR */}
-                              {!isFinalizada && !isAlocadoOutraMaquina && isIniciada && talao.id_maquina === machineId && (
-                                <>
-                                  <div className="px-3 py-1.5 bg-gradient-to-r from-blue-600 to-cyan-700 text-white rounded-full font-bold text-xs shadow-md uppercase">
-                                    ▶ Em Produção
-                                  </div>
+                                )}
+                                {!isFinalizada && !isAlocadoOutraMaquina && isIniciada && talao.id_maquina === machineId && (
                                   <button
                                     onClick={(e) => {
                                       e.stopPropagation();
                                       handleFinishTalao(talao, selectedMapa.estacoes[currentStationIndex].numero_estacao);
                                     }}
-                                    className="px-4 py-2 bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white text-xs rounded-lg font-bold transition-all shadow-md hover:shadow-lg active:scale-95"
-                                    title="Finalizar este talão"
+                                    className="px-2 py-1 bg-red-500 hover:bg-red-600 text-white text-[10px] rounded font-bold transition-all"
+                                    title="Finalizar"
                                   >
-                                    🏁 Finalizar
+                                    🏁
                                   </button>
-                                </>
-                              )}
-                              
-                              {/* Talão selecionado (mas ainda NÃO iniciado) */}
-                              {!isFinalizada && !isAlocadoOutraMaquina && !isIniciada && isSelected && (
-                                <div className="px-3 py-1.5 bg-gradient-to-r from-green-600 to-emerald-700 text-white rounded-full font-bold text-xs shadow-md uppercase">
-                                  ✓ Selecionado
-                                </div>
-                              )}
-                              
-                              {/* Talão disponível */}
-                              {!isFinalizada && !isAlocadoOutraMaquina && !isIniciada && !isSelected && !talao.concluida_parcial && (
-                                <div className="px-3 py-1.5 bg-gradient-to-r from-emerald-600 to-green-700 text-white rounded-full font-bold text-xs shadow-md uppercase">
-                                  ✓ Disponível
+                                )}
                               </div>
-                              )}
                             </div>
                           </div>
                         );
@@ -891,19 +862,19 @@ export const ProductionCommandsModal = React.memo(function ProductionCommandsMod
         </div>
 
         {/* Footer */}
-        <div className="p-4 bg-gray-50 border-t border-gray-100 rounded-b-2xl">
-          <div className="flex items-center justify-between">
+        <div className="p-6 bg-blue-900/60 backdrop-blur-sm border-t-2 border-blue-400/30">
+          <div className="flex items-center justify-between gap-4">
             {/* Status da Seleção */}
             <div className="flex items-center gap-3">
               {step === 'detalhes' && selectedTaloes.length > 0 && (
-                <div className="flex items-center gap-2 bg-gradient-to-r from-green-50 to-emerald-50 px-4 py-2 rounded-xl border border-green-200">
-                  <div className="w-6 h-6 bg-green-500 rounded-full flex items-center justify-center">
-                    <CheckCircle2 className="w-4 h-4 text-white" />
+                <div className="flex items-center gap-3 bg-gradient-to-r from-green-500/30 to-emerald-500/30 px-5 py-3 rounded-xl border-2 border-green-400/50 backdrop-blur-sm shadow-lg">
+                  <div className="w-10 h-10 bg-green-500 rounded-xl flex items-center justify-center shadow-md">
+                    <CheckCircle2 className="w-6 h-6 text-white" />
                   </div>
                   <div>
-                    <p className="font-bold text-green-900 text-sm">{selectedTaloes.length} produto(s)</p>
-                    <p className="text-green-700 text-xs">
-                      {selectedTaloes.reduce((sum, t) => sum + t.quantidade, 0).toLocaleString()} peças
+                    <p className="font-bold text-white text-lg">{selectedTaloes.length} produto(s) selecionado(s)</p>
+                    <p className="text-green-200 text-sm font-medium">
+                      {selectedTaloes.reduce((sum, t) => sum + t.quantidade, 0).toLocaleString()} peças no total
                     </p>
                   </div>
                 </div>
@@ -915,7 +886,7 @@ export const ProductionCommandsModal = React.memo(function ProductionCommandsMod
               {step === 'detalhes' && (
                 <button
                   onClick={() => setStep('mapas')}
-                  className="px-6 py-3 text-gray-700 hover:text-gray-900 bg-white hover:bg-gray-50 rounded-xl transition-all duration-200 font-semibold border border-gray-300 hover:border-gray-400 active:scale-95"
+                  className="px-8 py-4 text-white hover:text-white bg-blue-600/50 hover:bg-blue-500/60 rounded-xl transition-all duration-200 font-bold border-2 border-blue-400/40 hover:border-blue-300/60 active:scale-95 shadow-lg text-lg"
                 >
                   ← Voltar
                 </button>
@@ -923,26 +894,26 @@ export const ProductionCommandsModal = React.memo(function ProductionCommandsMod
               
               <button
                 onClick={handleClose}
-                className="px-6 py-3 text-gray-700 hover:text-gray-900 bg-white hover:bg-gray-50 rounded-xl transition-all duration-200 font-semibold border border-gray-300 hover:border-gray-400 active:scale-95"
+                className="px-8 py-4 text-white hover:text-white bg-red-600/50 hover:bg-red-500/60 rounded-xl transition-all duration-200 font-bold border-2 border-red-400/40 hover:border-red-300/60 active:scale-95 shadow-lg text-lg"
               >
-                Cancelar
+                ✕ Cancelar
               </button>
 
               {step === 'detalhes' && selectedTaloes.length > 0 && (
                 <button
                   onClick={handleStartProduction}
                   disabled={loading}
-                  className="px-6 py-3 bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white rounded-xl font-bold shadow-lg hover:shadow-xl disabled:opacity-50 transition-all duration-200 transform hover:scale-105 active:scale-95 flex items-center gap-2 disabled:cursor-not-allowed"
+                  className="px-10 py-4 bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white rounded-xl font-black shadow-2xl hover:shadow-3xl disabled:opacity-50 transition-all duration-200 transform hover:scale-105 active:scale-95 flex items-center gap-3 disabled:cursor-not-allowed border-2 border-green-300/30 text-lg"
                 >
                   {loading ? (
                     <>
-                      <LoadingSpinner className="w-5 h-5" />
+                      <LoadingSpinner className="w-6 h-6" />
                       <span>Iniciando...</span>
                     </>
                   ) : (
                     <>
-                      <Play className="w-5 h-5" />
-                      <span>Iniciar Produção</span>
+                      <Play className="w-6 h-6" />
+                      <span>🚀 Iniciar Produção</span>
                     </>
                   )}
                 </button>

@@ -1,6 +1,6 @@
 // 🖥️ Tipos para configuração de layout/telas
 
-export type LayoutType = 'default' | 'eva_16_stations';
+export type LayoutType = 'default' | 'eva_16_stations' | 'rotativas';
 
 export interface LayoutConfig {
   type: LayoutType;

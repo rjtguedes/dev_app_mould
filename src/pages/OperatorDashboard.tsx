@@ -6,6 +6,7 @@ import { useSounds } from '../hooks/useSounds';
 import { SingleMachineViewNew } from '../components/SingleMachineView-new';
 import { ChildMachineGrid } from '../components/ChildMachineGrid';
 import { Eva16StationsView } from '../components/Eva16StationsView';
+import { RotativasStationsView } from '../components/RotativasStationsView';
 import { DashboardHeader } from '../components/DashboardHeader';
 import { Sidebar } from '../components/Sidebar';
 import { LoadingSpinner } from '../components/LoadingSpinner';
@@ -919,8 +920,8 @@ export function OperatorDashboard({
 
       {/* Main Content */}
       <main className={`flex-1 transition-all duration-300 ${sidebarCollapsed ? 'ml-16' : 'ml-64'} pt-16 p-6`}>
-        {/* Indicador de Produção Atual - BASEADO NO BACKEND (SSE) - Esconder no layout EVA 16 */}
-        {machineData?.contexto?.producao_mapa && !(currentLayout === 'eva_16_stations' && isMultipostos) && (
+        {/* Indicador de Produção Atual - BASEADO NO BACKEND (SSE) - Esconder nos layouts EVA 16 e Rotativas */}
+        {machineData?.contexto?.producao_mapa && !(currentLayout === 'eva_16_stations' && isMultipostos) && !(currentLayout === 'rotativas' && isMultipostos) && (
           <div className="mb-4 bg-green-600/20 border border-green-400/40 rounded-xl p-4 text-sm text-green-100 flex items-center justify-between">
             <div className="flex items-center gap-3">
               <span className="px-2 py-1 rounded-lg bg-green-500/30 border border-green-400/60 font-bold uppercase text-xs">Em Produção</span>
@@ -965,8 +966,8 @@ export function OperatorDashboard({
         )}
 
 
-        {/* Machine View - Esconder quando usar layout EVA 16 */}
-        {!(currentLayout === 'eva_16_stations' && isMultipostos) && (
+        {/* Machine View - Esconder quando usar layouts EVA 16 ou Rotativas */}
+        {!(currentLayout === 'eva_16_stations' && isMultipostos) && !(currentLayout === 'rotativas' && isMultipostos) && (
           <SingleMachineViewNew
             machineData={machineData}
             contextoAtivo={contextoAtivo}
@@ -985,8 +986,16 @@ export function OperatorDashboard({
         {childProductions.length > 0 && (
           <div className="mt-6">
             {currentLayout === 'eva_16_stations' ? (
-              // ✅ NOVO: Layout EVA 16 Estações (2 colunas ESQUERDA/DIREITA)
+              // ✅ Layout EVA 16 Estações (2 colunas ESQUERDA/DIREITA)
               <Eva16StationsView
+                machineData={machineData}
+                childProductions={childProductions}
+                contextoAtivo={contextoAtivo}
+                onAddReject={handleAddRejeitoEstacao}
+              />
+            ) : currentLayout === 'rotativas' ? (
+              // ✅ Layout Rotativas (2 colunas automáticas divididas por quantidade)
+              <RotativasStationsView
                 machineData={machineData}
                 childProductions={childProductions}
                 contextoAtivo={contextoAtivo}

@@ -58,6 +58,11 @@ class LayoutStorageManager {
   getDefaultLayoutType(machineName: string): LayoutType {
     const nameLower = machineName.toLowerCase();
     
+    // Detectar automaticamente layout Rotativas
+    if (nameLower.includes('rotativa')) {
+      return 'rotativas';
+    }
+    
     // Detectar automaticamente layout EVA 16 estações
     if (nameLower.includes('eva') && nameLower.includes('2')) {
       return 'eva_16_stations';
