@@ -17,7 +17,8 @@ interface StationData {
   produzido: number;
   rejeitos: number;
   saldo: number;
-  // ✅ NOVO: Informações da produção alocada
+  total_a_produzir: number; // ✅ NOVO: Total do talão alocado
+  // Informações da produção alocada
   tamanho?: string | null;
   produto?: string | null;
   cor?: string | null;
@@ -51,6 +52,9 @@ export function Eva16StationsView({
       
       if (!isEsquerda && !isDireita) return; // Pular se não identificar lado
       
+      // ✅ Extrair producao_mapa ANTES do switch (escopo global)
+      const producaoMapa = production.websocket_data?.producao_mapa;
+      
       // Extrair dados baseado no contexto ativo (dados vêm via SSE em websocket_data)
       let produzido = 0;
       let rejeitos = 0;
@@ -72,23 +76,32 @@ export function Eva16StationsView({
                     production.stats?.rejeitos || 0;
           break;
         case 'taloes':
-          produzido = production.websocket_data?.producao_mapa?.sinais_validos || 
-                     production.websocket_data?.producao_mapa?.sinais || 
-                     production.stats?.produzido || 0;
-          rejeitos = production.websocket_data?.producao_mapa?.rejeitos || 
-                    production.stats?.rejeitos || 0;
-          saldo = production.websocket_data?.producao_mapa?.saldo_a_produzir || 0;
+          // ✅ CORREÇÃO: Só usar dados se tiver produção ativa (id_mapa não null)
+          const temProducaoAtiva = producaoMapa?.id_mapa !== null && producaoMapa?.id_mapa !== undefined;
+          
+          if (temProducaoAtiva) {
+            produzido = producaoMapa?.sinais_validos || producaoMapa?.sinais || 0;
+            rejeitos = producaoMapa?.rejeitos || 0;
+            saldo = producaoMapa?.saldo_a_produzir || 0;
+          } else {
+            produzido = 0;
+            rejeitos = 0;
+            saldo = 0;
+          }
           break;
       }
       
-      totalProd += produzido;
-      totalRej += rejeitos;
+      // ✅ CORREÇÃO: No contexto 'taloes', só somar estações com produção ativa
+      if (contextoAtivo !== 'taloes' || producaoMapa?.id_mapa) {
+        totalProd += produzido;
+        totalRej += rejeitos;
+      }
       
-      // ✅ NOVO: Extrair informações da produção alocada (tamanho, produto, cor)
-      const producaoMapa = production.websocket_data?.producao_mapa;
-      const tamanho = producaoMapa?.talao_tamanho || null; // ✅ talao_tamanho (ex: "36")
-      const produto = producaoMapa?.produto_referencia || producaoMapa?.talao_referencia || null; // ✅ produto_referencia ou talao_referencia
-      const cor = producaoMapa?.descricao_cor || null; // ✅ descricao_cor
+      // ✅ Extrair informações da produção alocada (tamanho, produto, cor)
+      const tamanho = producaoMapa?.talao_tamanho || null;
+      const produto = producaoMapa?.produto_referencia || producaoMapa?.talao_referencia || null;
+      const cor = producaoMapa?.descricao_cor || null;
+      const totalAProduzir = producaoMapa?.qt_produzir || 0; // ✅ NOVO: Total do talão
       
       const stationData: StationData = {
         posto: postoNumero,
@@ -97,7 +110,7 @@ export function Eva16StationsView({
         produzido,
         rejeitos,
         saldo,
-        // ✅ Informações da produção
+        total_a_produzir: totalAProduzir, // ✅ NOVO
         tamanho,
         produto,
         cor
@@ -130,7 +143,7 @@ export function Eva16StationsView({
             produzido: 0,
             rejeitos: 0,
             saldo: 0,
-            // ✅ Informações vazias para placeholder
+            total_a_produzir: 0, // ✅ NOVO
             tamanho: null,
             produto: null,
             cor: null
@@ -171,7 +184,7 @@ export function Eva16StationsView({
     return (
       <div className="border-b border-blue-400/20 hover:bg-blue-700/20 transition-colors">
         {/* Linha principal com números e botão */}
-        <div className="flex items-center gap-3 py-2">
+        <div className="flex items-center gap-2 py-1.5">
           {/* Número do posto */}
           <div className="flex items-center justify-center w-10 h-10 rounded-full bg-blue-400/30 text-white font-bold text-lg shrink-0">
             {station.posto}
@@ -194,7 +207,7 @@ export function Eva16StationsView({
           {/* Saldo (apenas se contexto for talões) */}
           {showSaldo && (
             <div className="flex-1 text-center min-w-[80px]">
-              <div className="text-3xl font-bold text-red-400">
+              <div className="text-3xl font-bold text-orange-400">
                 {station.saldo}
               </div>
             </div>
@@ -218,12 +231,29 @@ export function Eva16StationsView({
           </div>
         </div>
         
-        {/* ✅ NOVO: Linha de informações da produção (TAMANHO-PRODUTO - COR) */}
-        {produtoInfo && (
-          <div className="pb-2 px-3 flex justify-center">
-            <div className="text-sm text-white/80 font-medium tracking-wide">
-              {produtoInfo}
-            </div>
+        {/* ✅ Linha de informações da produção */}
+        {(station.tamanho || station.produto) && (
+          <div className="pb-1 px-3 flex justify-center items-center gap-1">
+            {/* Tamanho SOLTO com DESTAQUE */}
+            {station.tamanho && (
+              <span className="text-white font-black text-sm">{station.tamanho}</span>
+            )}
+            {/* Separador */}
+            {station.tamanho && station.produto && (
+              <span className="text-white/50 font-medium text-sm">-</span>
+            )}
+            {/* Produto */}
+            {station.produto && (
+              <span className="text-white/80 font-medium text-sm">{station.produto}</span>
+            )}
+            {/* Cor */}
+            {station.cor && (
+              <span className="text-blue-300/80 font-medium text-sm"> - {station.cor}</span>
+            )}
+            {/* Total a Produzir */}
+            {showSaldo && station.total_a_produzir > 0 && (
+              <span className="text-blue-400/80 font-medium text-sm ml-1">(Total: {station.total_a_produzir})</span>
+            )}
           </div>
         )}
       </div>
@@ -308,20 +338,20 @@ export function Eva16StationsView({
             <h3 className="text-2xl font-bold text-center text-white mb-3">
               DIREITA
             </h3>
-            <div className="flex items-center gap-3 px-3">
-              <div className="w-10 shrink-0"></div> {/* Espaço para número */}
-              <div className="flex-1 text-center text-sm font-semibold text-blue-200 min-w-[80px]">
+            <div className="flex items-center gap-2 px-3">
+              <div className="w-10 shrink-0"></div>
+              <div className="flex-1 text-center text-xs font-semibold text-blue-200 min-w-[80px]">
                 Produzido
               </div>
-              <div className="flex-1 text-center text-sm font-semibold text-blue-200 min-w-[80px]">
+              <div className="flex-1 text-center text-xs font-semibold text-blue-200 min-w-[80px]">
                 Rejeitos
               </div>
               {showSaldoColumn && (
-                <div className="flex-1 text-center text-sm font-semibold text-blue-200 min-w-[80px]">
+                <div className="flex-1 text-center text-xs font-semibold text-blue-200 min-w-[80px]">
                   Saldo
                 </div>
               )}
-              <div className="shrink-0 ml-2 w-[80px]"></div> {/* Espaço para botão */}
+              <div className="shrink-0 ml-2 w-[80px]"></div>
             </div>
           </div>
           

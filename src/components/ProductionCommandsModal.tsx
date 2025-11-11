@@ -35,9 +35,19 @@ export const ProductionCommandsModal = React.memo(function ProductionCommandsMod
 
   const CURRENT_PROD_KEY = 'industrack_current_production';
 
-  // Carregar mapas ao abrir modal
+  // ✅ OTIMIZAÇÃO: Usar ref para rastrear se modal já foi inicializado
+  const wasOpenRef = React.useRef(false);
+  const lastMachineIdRef = React.useRef<number | null>(null);
+
+  // Carregar mapas ao abrir modal - ✅ OTIMIZADO para não resetar estado
   useEffect(() => {
     if (isOpen) {
+      // Só carregar mapas se:
+      // 1. Modal está abrindo pela primeira vez (não estava aberto antes)
+      // 2. OU machineId mudou de fato
+      const shouldLoad = !wasOpenRef.current || lastMachineIdRef.current !== machineId;
+      
+      if (shouldLoad) {
       console.log('🎯 Modal de produção aberto para máquina:', machineId);
       loadMapas();
       // Carregar produção atual armazenada localmente
@@ -47,6 +57,14 @@ export const ProductionCommandsModal = React.memo(function ProductionCommandsMod
       } catch {
         setStoredProduction(null);
       }
+        lastMachineIdRef.current = machineId;
+      } else {
+        console.log('⏭️ Modal já está aberto, mantendo estado atual (evitando re-render)');
+      }
+      
+      wasOpenRef.current = true;
+    } else {
+      wasOpenRef.current = false;
     }
     // ✅ IMPORTANTE: NÃO resetar quando modal já está aberto e machineId não muda
     // Isso evita que o modal se feche sozinho durante updates do SSE
@@ -217,9 +235,15 @@ export const ProductionCommandsModal = React.memo(function ProductionCommandsMod
       setError(null);
       console.log('🏁 Finalizando talão:', { talao, estacaoNumero, quantidadeProduzida });
       
+      // ✅ SOLUÇÃO MAIS DIRETA: O próprio talão JÁ TEM o id_maquina correto!
+      const idMaquinaEstacao = talao.id_maquina || machineId;
+      
+      console.log(`✅ Usando id_maquina do talão: ${idMaquinaEstacao} (raiz: ${machineId})`);
+      console.log('📤 Payload finalizar:', { id_maquina: idMaquinaEstacao, id_talao: talao.id, estacao_numero: estacaoNumero });
+      
       // ✅ Usar o novo endpoint finalizar-estacao
       const response = await apiService.finalizarEstacao({
-        id_maquina: machineId,
+        id_maquina: idMaquinaEstacao,
         id_talao: talao.id,
         estacao_numero: estacaoNumero,
         motivo: 'Produção concluída'
@@ -269,8 +293,14 @@ export const ProductionCommandsModal = React.memo(function ProductionCommandsMod
       setError(null);
       console.log('🔄 Retomando talão:', { talao, estacaoNumero });
       
+      // ✅ SOLUÇÃO MAIS DIRETA: O próprio talão JÁ TEM o id_maquina correto!
+      const idMaquinaEstacao = talao.id_maquina || machineId;
+      
+      console.log(`✅ Usando id_maquina do talão: ${idMaquinaEstacao} (raiz: ${machineId})`);
+      console.log('📤 Payload retomar:', { id_maquina: idMaquinaEstacao, id_talao: talao.id, estacao_numero: estacaoNumero });
+      
       const response = await apiService.retomarTalao({
-        id_maquina: machineId,
+        id_maquina: idMaquinaEstacao,
         id_talao: talao.id,
         estacao_numero: estacaoNumero
       });
@@ -408,52 +438,70 @@ export const ProductionCommandsModal = React.memo(function ProductionCommandsMod
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 bg-black/60 backdrop-blur-md flex items-center justify-center p-4 z-50">
-      <div className="bg-gradient-to-br from-blue-900 via-blue-800 to-indigo-900 rounded-3xl max-w-7xl w-full max-h-[96vh] overflow-hidden shadow-[0_30px_90px_rgba(0,0,0,0.8)] border border-blue-400/30">
-        {/* Header */}
-        <div className="flex items-center justify-between p-6 bg-gradient-to-r from-blue-600/40 via-indigo-600/40 to-purple-600/40 backdrop-blur-sm border-b border-blue-400/30">
+    <div className="fixed inset-0 bg-gradient-to-br from-slate-900 via-blue-900 to-indigo-900 z-50">
+      <div className="w-full h-full flex flex-col">
+        {/* Header Principal */}
+        <div className="flex items-center justify-between px-8 py-4 bg-gradient-to-r from-slate-800 to-slate-900 border-b border-slate-700 shadow-lg flex-shrink-0">
           <div className="flex items-center gap-4">
-            <div className="w-14 h-14 bg-blue-500/30 rounded-xl flex items-center justify-center shadow-lg border border-blue-400/30">
-              <Package className="w-7 h-7 text-blue-200" />
+            <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-lg flex items-center justify-center shadow-md">
+              <Package className="w-6 h-6 text-white" />
             </div>
             <div>
               <h1 className="text-2xl font-bold tracking-tight text-white">
-                {step === 'mapas' && '📋 Escolher Trabalho'}
-                {step === 'detalhes' && '🎯 Selecionar Produtos'}
-                {step === 'confirmacao' && '✅ Confirmar Início'}
+                {step === 'mapas' && 'Escolher Trabalho'}
+                {step === 'detalhes' && 'Selecionar Produtos'}
+                {step === 'confirmacao' && 'Confirmar Início'}
               </h1>
-              <p className="text-blue-200 text-sm mt-1">
+              <p className="text-slate-400 text-sm mt-0.5">
                 {step === 'mapas' && 'Selecione o trabalho que deseja produzir'}
-                {step === 'detalhes' && 'Selecione os produtos e navegue entre estações'}
+                {step === 'detalhes' && selectedMapa?.nome}
                 {step === 'confirmacao' && 'Verifique os detalhes e confirme'}
               </p>
             </div>
           </div>
           {/* Tag Em Produção */}
           {storedProduction && storedProduction.id_maquina === machineId && (
-            <div className="hidden md:flex items-center gap-2 px-4 py-2 bg-green-500/20 border border-green-400/40 rounded-lg backdrop-blur-sm">
-              <span className="text-green-300 text-sm font-bold uppercase">Em Produção</span>
-              <span className="text-green-200 text-sm">Mapa #{storedProduction.id_mapa}</span>
+            <div className="flex items-center gap-2 px-4 py-2 bg-green-500/20 border border-green-400/50 rounded-lg backdrop-blur-sm">
+              <span className="text-green-400 text-sm font-bold uppercase">Em Produção</span>
+              <span className="text-green-300 text-sm">Mapa #{storedProduction.id_mapa}</span>
             </div>
           )}
           <button
             onClick={handleClose}
-            className="w-12 h-12 bg-white/10 hover:bg-white/20 rounded-xl transition-all duration-200 flex items-center justify-center border border-white/20"
+            className="w-10 h-10 bg-white/10 hover:bg-white/20 rounded-lg transition-all duration-200 flex items-center justify-center border border-white/20"
           >
-            <X className="w-6 h-6 text-white" />
+            <X className="w-5 h-5 text-white" />
           </button>
         </div>
 
-        {/* Content */}
-        <div className="p-6 overflow-y-auto max-h-[calc(96vh-220px)]">
+        {/* Content - Área com Scroll + Navegação Lateral */}
+        <div className="flex-1 overflow-hidden flex">
+          {/* Coluna Esquerda - Navegação Anterior (BARRA GRANDE) */}
+          {step === 'detalhes' && selectedMapa && selectedMapa.estacoes.length > 1 && (
+            <button
+              onClick={() => setCurrentStationIndex(i => Math.max(0, i - 1))}
+              disabled={currentStationIndex === 0}
+              className="w-32 bg-gradient-to-r from-blue-600/40 via-blue-600/20 to-transparent hover:from-blue-600/60 disabled:from-slate-700/20 disabled:cursor-not-allowed transition-all duration-300 flex items-center justify-center group border-r border-slate-700"
+              aria-label="Estação anterior"
+            >
+              <div className="flex flex-col items-center gap-4">
+                <div className="text-white text-7xl font-black group-hover:scale-125 group-disabled:opacity-30 transition-all duration-300">←</div>
+                <span className="text-white text-sm font-bold uppercase tracking-widest -rotate-90 transform origin-center whitespace-nowrap group-disabled:opacity-30">Anterior</span>
+              </div>
+            </button>
+          )}
+          
+          {/* Área Central com Conteúdo */}
+          <div className="flex-1 overflow-y-auto bg-gradient-to-br from-slate-800 via-slate-900 to-slate-800">
+            <div className="p-6">
           {error && (
-            <div className="mb-4 rounded-xl border-2 border-red-400/50 bg-red-500/20 backdrop-blur-sm text-white p-5 flex items-start gap-4 shadow-lg">
+              <div className="mb-4 rounded-lg border border-red-400/50 bg-red-500/20 backdrop-blur-sm p-4 flex items-start gap-3 shadow-lg">
               <div className="mt-0.5">
-                <AlertCircle className="w-6 h-6 text-red-300" />
+                  <AlertCircle className="w-5 h-5 text-red-400" />
               </div>
               <div>
-                <p className="font-bold text-lg text-red-200">⚠️ Erro</p>
-                <p className="text-sm text-red-100 mt-1">{error}</p>
+                  <p className="font-bold text-base text-red-200">Erro</p>
+                  <p className="text-sm text-red-300 mt-1">{error}</p>
               </div>
             </div>
           )}
@@ -468,15 +516,15 @@ export const ProductionCommandsModal = React.memo(function ProductionCommandsMod
           {step === 'mapas' && !loading && (
             <div className="space-y-3">
               {mapas.length === 0 ? (
-                <div className="text-center py-12">
-                  <div className="w-18 h-18 bg-gradient-to-br from-slate-100 to-slate-200 rounded-full flex items-center justify-center mx-auto mb-5 shadow-inner">
-                    <MapPin className="w-8 h-8 text-slate-500" />
+                <div className="text-center py-16">
+                  <div className="w-16 h-16 bg-slate-700/50 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <MapPin className="w-8 h-8 text-slate-400" />
                   </div>
-                  <h3 className="text-lg font-extrabold text-slate-800 mb-1 tracking-tight">Nenhum trabalho disponível</h3>
-                  <p className="text-slate-600 text-sm">Não há trabalhos alocados para esta máquina.</p>
+                  <h3 className="text-lg font-bold text-white mb-1">Nenhum trabalho disponível</h3>
+                  <p className="text-slate-400 text-sm">Não há trabalhos alocados para esta máquina.</p>
                 </div>
               ) : (
-                <div className="grid gap-3">
+                <div className="space-y-3">
                   {mapas.map((alocacao, index) => (
                     <div
                       key={alocacao.id_alocacao || index}
@@ -489,12 +537,12 @@ export const ProductionCommandsModal = React.memo(function ProductionCommandsMod
                           setError('Trabalho sem ID válido.');
                         }
                       }}
-                      className="group p-4 bg-white border-2 border-slate-200 rounded-xl hover:border-indigo-500 hover:shadow-xl cursor-pointer transition-all duration-200 transform hover:scale-[1.01] active:scale-[0.99]"
+                      className="group p-5 bg-slate-700/50 backdrop-blur-sm border border-slate-600 rounded-lg hover:border-blue-500 hover:bg-slate-700/70 cursor-pointer transition-all duration-200"
                     >
                       <div className="flex items-center gap-4">
                         {/* Ícone do Trabalho */}
-                        <div className="w-14 h-14 bg-gradient-to-br from-indigo-600 to-purple-600 rounded-xl flex items-center justify-center flex-shrink-0 shadow-md">
-                          <Package className="w-7 h-7 text-white" />
+                        <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-lg flex items-center justify-center flex-shrink-0 shadow-md">
+                          <Package className="w-6 h-6 text-white" />
                         </div>
                         
                         {/* Informações Principais */}
@@ -502,47 +550,42 @@ export const ProductionCommandsModal = React.memo(function ProductionCommandsMod
                           <div className="flex items-start justify-between">
                             <div className="flex-1">
                               {/* Título e Código */}
-                              <h2 className="text-xl font-bold text-gray-900 mb-2">
+                              <h2 className="text-lg font-bold text-white mb-2">
                                 {alocacao.codmapa || `Trabalho #${alocacao.id_mapa}`}
                               </h2>
                               
-                              {/* Cor - destaque maior */}
-                              {alocacao.cor_descricao && (
-                                <div className="mb-3">
-                                  <div className="inline-flex items-center gap-2 bg-gradient-to-r from-pink-100 to-rose-100 px-4 py-2 rounded-lg border-2 border-pink-300">
-                                    <span className="text-pink-600 text-lg">🎨</span>
-                                    <span className="font-bold text-pink-900 text-base">{alocacao.cor_descricao}</span>
-                                  </div>
-                                </div>
-                              )}
-                              
                               {/* Informações em linha */}
-                              <div className="flex flex-wrap gap-2 mb-2">
-                                <span className="inline-flex items-center gap-1 bg-blue-50 px-3 py-1.5 rounded-lg text-sm font-bold text-blue-900 border border-blue-200">
-                                  📍 Posição {alocacao.posicao_ordem}
-                                </span>
-                                <span className="inline-flex items-center gap-1 bg-green-50 px-3 py-1.5 rounded-lg text-sm font-bold text-green-900 border border-green-200">
-                                  ⏱️ {alocacao.prioridade_alocacao}
-                                </span>
+                              <div className="flex flex-wrap gap-2 text-sm text-slate-300">
+                                <span>Posição {alocacao.posicao_ordem}</span>
+                                <span>•</span>
+                                <span>{alocacao.prioridade_alocacao}</span>
+                              {alocacao.cor_descricao && (
+                                  <>
+                                    <span>•</span>
+                                    <span className="font-semibold text-blue-300">{alocacao.cor_descricao}</span>
+                                  </>
+                                )}
                                 {alocacao.ciclos_calculados && (
-                                  <span className="inline-flex items-center gap-1 bg-emerald-50 px-3 py-1.5 rounded-lg text-sm font-bold text-emerald-900 border border-emerald-200">
-                                    🔄 {alocacao.ciclos_calculados.toLocaleString()} ciclos
-                                  </span>
+                                  <>
+                                    <span>•</span>
+                                    <span>{alocacao.ciclos_calculados.toLocaleString()} ciclos</span>
+                                  </>
                                 )}
                                 {alocacao.duracao_calculada_segundos && (
-                                  <span className="inline-flex items-center gap-1 bg-amber-50 px-3 py-1.5 rounded-lg text-sm font-bold text-amber-900 border border-amber-200">
-                                    ⏱️ {Math.ceil(alocacao.duracao_calculada_segundos / 60)} min
-                                  </span>
+                                  <>
+                                    <span>•</span>
+                                    <span>{Math.ceil(alocacao.duracao_calculada_segundos / 60)} min</span>
+                                  </>
                                 )}
                               </div>
                             </div>
                             
                             {/* Status */}
                             <div className="flex items-center gap-2">
-                              <div className="px-3 py-1 bg-gradient-to-r from-emerald-600 to-green-600 text-white rounded-full font-bold text-xs shadow">
-                                ✅ PRONTO
+                              <div className="px-3 py-1 bg-green-500/30 border border-green-400/50 text-green-300 rounded font-semibold text-xs">
+                                Disponível
                               </div>
-                              <span className="text-xl text-gray-400 group-hover:text-blue-500 transition-colors">→</span>
+                              <span className="text-xl text-slate-500 group-hover:text-blue-400 transition-colors">→</span>
                             </div>
                           </div>
                         </div>
@@ -568,14 +611,14 @@ export const ProductionCommandsModal = React.memo(function ProductionCommandsMod
                 
                 if (temProducaoAtiva || temTalaoFinalizado) {
                   return (
-                    <div className="bg-gradient-to-r from-amber-50 to-orange-50 rounded-xl p-4 border-2 border-orange-300 shadow-lg">
+                    <div className="bg-orange-500/20 backdrop-blur-sm rounded-lg p-4 border border-orange-400/50 shadow-lg">
                       <div className="flex items-start gap-3">
-                        <div className="w-12 h-12 bg-orange-500 rounded-xl flex items-center justify-center flex-shrink-0">
-                          <AlertCircle className="w-6 h-6 text-white" />
+                        <div className="w-10 h-10 bg-orange-500 rounded-lg flex items-center justify-center flex-shrink-0">
+                          <AlertCircle className="w-5 h-5 text-white" />
                         </div>
                         <div className="flex-1">
-                          <h3 className="text-lg font-bold text-orange-900 mb-1">⚠️ Produção Ativa Detectada</h3>
-                          <p className="text-orange-800 text-sm mb-3">
+                          <h3 className="text-base font-bold text-orange-300 mb-1">Produção Ativa Detectada</h3>
+                          <p className="text-orange-200 text-sm mb-3">
                             {temProducaoAtiva 
                               ? 'Há talões em produção neste mapa. Finalize-os antes de iniciar nova produção.'
                               : 'Há talões finalizados. Para iniciar nova produção, você precisa finalizar completamente a produção atual.'
@@ -584,10 +627,9 @@ export const ProductionCommandsModal = React.memo(function ProductionCommandsMod
                           <button
                             onClick={handleFinalizarProducaoAtiva}
                             disabled={loading}
-                            className="px-5 py-2.5 bg-gradient-to-r from-orange-600 to-red-600 hover:from-orange-700 hover:to-red-700 text-white rounded-lg font-bold shadow-md hover:shadow-lg transition-all active:scale-95 flex items-center gap-2 disabled:opacity-50"
+                            className="px-5 py-2 bg-orange-600 hover:bg-orange-700 text-white rounded-lg font-semibold shadow-md hover:shadow-lg transition-all active:scale-95 flex items-center gap-2 disabled:opacity-50 text-sm"
                           >
-                            <span>🏁</span>
-                            <span>Finalizar Produção Ativa Agora</span>
+                            <span>Finalizar Produção Ativa</span>
                           </button>
                         </div>
                       </div>
@@ -597,296 +639,360 @@ export const ProductionCommandsModal = React.memo(function ProductionCommandsMod
                 return null;
               })()}
 
-              {/* Info do Trabalho */}
-              <div className="bg-blue-600/30 backdrop-blur-sm rounded-xl p-5 border-2 border-blue-400/40 shadow-lg">
-                <div className="flex items-center gap-4">
-                  <div className="w-14 h-14 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-xl flex items-center justify-center shadow-md">
-                    <Package className="w-7 h-7 text-white" />
-                  </div>
-                  <div>
-                    <h2 className="text-xl font-bold text-white mb-1">{selectedMapa.nome}</h2>
-                    <p className="text-blue-200 text-sm font-medium">📌 Selecione os produtos e use as setas ← → para navegar entre estações</p>
-                  </div>
-                </div>
-              </div>
 
-              {/* Navegação por Estações */}
+              {/* Header da Estação - SOLTO (sem card envolvente) */}
               {selectedMapa.estacoes.length > 0 && (
-                <div className="bg-blue-800/40 backdrop-blur-sm rounded-2xl border-2 border-blue-400/30 overflow-hidden shadow-xl">
-                  {/* Header da Estação com Navegação - BOTÕES GRANDES */}
-                  <div className="bg-blue-700/30 px-6 py-4 border-b-2 border-blue-400/30 flex items-center justify-between gap-4">
-                    {/* Botão Anterior - GRANDE */}
-                    <button
-                      className="w-20 h-20 rounded-2xl bg-gradient-to-br from-blue-500 to-blue-600 hover:from-blue-400 hover:to-blue-500 text-white text-4xl font-black shadow-xl hover:shadow-2xl disabled:opacity-30 disabled:cursor-not-allowed transition-all duration-200 transform hover:scale-105 active:scale-95 border-2 border-blue-300/30 flex items-center justify-center"
-                      onClick={() => setCurrentStationIndex(i => Math.max(0, i - 1))}
-                      disabled={currentStationIndex === 0}
-                      aria-label="Estação anterior"
-                      title="Estação anterior"
-                    >
-                      ←
-                    </button>
-                    
+                <div className="mb-6">
                     {/* Indicador da Estação Atual */}
-                    <div className="flex-1 flex items-center justify-center gap-4 bg-blue-600/40 backdrop-blur-sm rounded-xl px-6 py-4 border border-blue-300/30">
-                      <div className="w-16 h-16 bg-gradient-to-br from-indigo-500 to-purple-600 text-white rounded-xl flex items-center justify-center font-black text-3xl shadow-lg border-2 border-white/30">
+                  <div className="flex items-center justify-center gap-4 mb-6">
+                    <div className="w-16 h-16 bg-gradient-to-br from-blue-500 to-indigo-600 text-white rounded-xl flex items-center justify-center font-black text-3xl shadow-xl border-2 border-blue-400/30 relative">
                         {selectedMapa.estacoes[currentStationIndex].numero_estacao}
+                      {(() => {
+                        const estacaoAtualNumero = selectedMapa.estacoes[currentStationIndex].numero_estacao;
+                        const taloesSelecionadosNestaEstacao = selectedTaloes.filter(
+                          t => t.estacao_numero === estacaoAtualNumero
+                        ).length;
+                        
+                        if (taloesSelecionadosNestaEstacao > 0) {
+                          return (
+                            <div className="absolute -top-2 -right-2 w-8 h-8 bg-green-500 rounded-full flex items-center justify-center border-2 border-white shadow-lg">
+                              <span className="text-white text-sm font-black">{taloesSelecionadosNestaEstacao}</span>
+                            </div>
+                          );
+                        }
+                        return null;
+                      })()}
                       </div>
                       <div>
-                        <h3 className="text-2xl font-black text-white tracking-tight">
+                      <h3 className="text-3xl font-black text-white tracking-tight drop-shadow-lg">
                           Estação {selectedMapa.estacoes[currentStationIndex].numero_estacao}
                         </h3>
-                        <p className="text-blue-200 text-sm font-medium">
+                      <p className="text-slate-300 text-sm font-medium">
                           {selectedMapa.estacoes[currentStationIndex].taloes.length} produto(s) disponível(eis)
+                        {(() => {
+                          const estacaoAtualNumero = selectedMapa.estacoes[currentStationIndex].numero_estacao;
+                          const taloesSelecionadosNestaEstacao = selectedTaloes.filter(
+                            t => t.estacao_numero === estacaoAtualNumero
+                          ).length;
+                          
+                          if (taloesSelecionadosNestaEstacao > 0) {
+                            return (
+                              <span className="ml-2 text-green-400 font-bold">
+                                • {taloesSelecionadosNestaEstacao} selecionado(s)
+                              </span>
+                            );
+                          }
+                          return null;
+                        })()}
                         </p>
                       </div>
                     </div>
                     
-                    {/* Botão Próximo - GRANDE */}
-                    <button
-                      className="w-20 h-20 rounded-2xl bg-gradient-to-br from-blue-500 to-blue-600 hover:from-blue-400 hover:to-blue-500 text-white text-4xl font-black shadow-xl hover:shadow-2xl disabled:opacity-30 disabled:cursor-not-allowed transition-all duration-200 transform hover:scale-105 active:scale-95 border-2 border-blue-300/30 flex items-center justify-center"
-                      onClick={() => setCurrentStationIndex(i => Math.min(selectedMapa.estacoes.length - 1, i + 1))}
-                      disabled={currentStationIndex === selectedMapa.estacoes.length - 1}
-                      aria-label="Próxima estação"
-                      title="Próxima estação"
-                    >
-                      →
-                    </button>
-                  </div>
-
-                  {/* Produtos da Estação atual - FORMATO LISTA MINIMALISTA */}
-                  <div className="p-4 bg-gradient-to-br from-blue-900/40 to-indigo-900/40">
-                    <div className="space-y-2">
-                      {selectedMapa.estacoes[currentStationIndex].taloes.map(talao => {
-                        const isSelected = selectedTaloes.some(t => t.id_talao === talao.id);
-                        const isIniciada = talao.iniciada === true;
-                        const isConcluidaTotal = talao.concluida_total === true;
-                        const isConcluidaParcial = talao.concluida_parcial === true && !isConcluidaTotal;
-                        const isFinalizada = isConcluidaTotal || isConcluidaParcial;
-                        const isAlocadoOutraMaquina = isIniciada && talao.id_maquina && talao.id_maquina !== machineId;
-                        const isDisabled = isConcluidaTotal || isAlocadoOutraMaquina;
-                        
-                        if (process.env.NODE_ENV === 'development') {
-                          console.log(`🔍 Talão ${talao.id}:`, {
-                            isIniciada,
-                            isFinalizada,
-                            isAlocadoOutraMaquina,
-                            isDisabled,
-                            id_maquina: talao.id_maquina,
-                            machineId
-                          });
-                        }
-                        
-                        return (
-                          <div
-                            key={talao.id}
-                            onClick={() => {
-                              if (!isDisabled) {
-                                toggleTalao({
-                              id_talao: talao.id,
-                              estacao_numero: selectedMapa.estacoes[currentStationIndex].numero_estacao,
-                              quantidade: talao.quantidade,
-                              tempo_ciclo_segundos: talao.tempo_ciclo_segundos,
-                              talao_referencia: talao.talao_referencia,
-                              talao_tamanho: talao.talao_tamanho
-                                });
-                              }
-                            }}
-                            className={`relative rounded-lg transition-all duration-150 backdrop-blur-sm overflow-hidden ${
-                              isConcluidaTotal
-                                ? 'bg-gray-600/20 border border-gray-400/40 opacity-60 cursor-not-allowed'
-                                : isConcluidaParcial
-                                ? 'bg-yellow-500/10 border border-yellow-400/50 cursor-default'
-                                : isAlocadoOutraMaquina
-                                ? 'bg-yellow-500/10 border border-yellow-400/40 opacity-75 cursor-not-allowed'
-                                : isSelected
-                                ? 'bg-green-500/15 border border-green-400/60 cursor-pointer'
-                                : isIniciada
-                                ? 'bg-blue-500/15 border border-blue-400/50 cursor-pointer hover:border-blue-300/70'
-                                : 'bg-white/5 border border-blue-300/30 cursor-pointer hover:border-indigo-400/50'
-                            }`}
-                          >
-                            {/* Lista Minimalista - Uma Linha por Talão */}
-                            <div className="px-3 py-2 flex items-center justify-between gap-3">
+                  {/* Cards Flutuantes de Produtos - ROW HORIZONTAL */}
+                  <div className="space-y-4">
+                    {selectedMapa.estacoes[currentStationIndex].taloes.map(talao => {
+                      const isSelected = selectedTaloes.some(t => t.id_talao === talao.id);
+                      const isIniciada = talao.iniciada === true;
+                      const isConcluidaTotal = talao.concluida_total === true;
+                      const isConcluidaParcial = talao.concluida_parcial === true && !isConcluidaTotal;
+                      const isFinalizada = isConcluidaTotal || isConcluidaParcial;
+                      const isAlocadoOutraMaquina = isIniciada && talao.id_maquina && talao.id_maquina !== machineId;
+                      const isDisabled = isConcluidaTotal || isAlocadoOutraMaquina;
+                      
+                      return (
+                        <div
+                          key={talao.id}
+                          onClick={() => {
+                            if (!isDisabled) {
+                              toggleTalao({
+                            id_talao: talao.id,
+                            estacao_numero: selectedMapa.estacoes[currentStationIndex].numero_estacao,
+                            quantidade: talao.quantidade,
+                            tempo_ciclo_segundos: talao.tempo_ciclo_segundos,
+                            talao_referencia: talao.talao_referencia,
+                            talao_tamanho: talao.talao_tamanho
+                              });
+                            }
+                          }}
+                          className={`relative rounded-2xl overflow-hidden backdrop-blur-sm transition-all duration-200 transform hover:-translate-y-1 ${
+                            isConcluidaTotal
+                              ? 'bg-slate-700/60 border border-slate-500 opacity-60 cursor-not-allowed shadow-lg'
+                              : isConcluidaParcial
+                              ? 'bg-yellow-600/30 border border-yellow-500/60 cursor-default shadow-lg shadow-yellow-500/20'
+                              : isAlocadoOutraMaquina
+                              ? 'bg-yellow-600/30 border border-yellow-500/60 opacity-75 cursor-not-allowed shadow-lg shadow-yellow-500/20'
+                              : isSelected
+                              ? 'bg-gradient-to-r from-green-500/30 to-emerald-600/30 border-2 border-green-500 shadow-2xl shadow-green-500/50 cursor-pointer ring-2 ring-green-400/30'
+                              : isIniciada
+                              ? 'bg-blue-600/30 border border-blue-500/60 hover:border-blue-400 cursor-pointer shadow-xl shadow-blue-500/30'
+                              : 'bg-slate-700/60 border border-slate-500 hover:border-blue-500 cursor-pointer shadow-xl hover:shadow-2xl hover:shadow-blue-500/20'
+                          }`}
+                        >
+                          {/* Card Flutuante - ROW HORIZONTAL */}
+                          <div className="p-6">
+                            <div className="flex items-center gap-6">
+                              {/* Checkbox Grande */}
+                              <div className={`w-8 h-8 rounded-lg border-2 flex items-center justify-center flex-shrink-0 shadow-md ${
+                                isSelected
+                                  ? 'border-green-400 bg-green-500'
+                                  : isIniciada
+                                  ? 'border-blue-400 bg-blue-500'
+                                  : 'border-slate-400 bg-slate-700/50'
+                              }`}>
+                                {isSelected && <CheckCircle2 className="w-6 h-6 text-white" />}
+                              </div>
                               
-                              {/* Ícone de Status */}
-                              <div className="flex-shrink-0">
-                                {isConcluidaTotal ? (
-                                  <CheckCircle2 className="w-4 h-4 text-gray-300" />
-                                ) : isConcluidaParcial ? (
-                                  <AlertCircle className="w-4 h-4 text-yellow-300" />
-                                ) : isAlocadoOutraMaquina ? (
-                                  <AlertCircle className="w-4 h-4 text-yellow-300" />
-                                ) : isSelected ? (
-                                  <CheckCircle2 className="w-4 h-4 text-green-300" />
-                                ) : isIniciada ? (
-                                  <Play className="w-4 h-4 text-blue-300" />
-                                ) : (
-                                  <Package className="w-4 h-4 text-blue-300" />
-                                )}
+                              {/* Referência e Tamanho */}
+                              <div className="flex items-center gap-3">
+                                <span className="text-white font-bold text-xl">{talao.talao_referencia}</span>
+                                <div className="px-5 py-1.5 bg-gradient-to-r from-blue-600 to-indigo-600 rounded-lg shadow-md">
+                                  <span className="text-white font-black text-3xl">{talao.talao_tamanho}</span>
+                                </div>
                               </div>
 
                               {/* Informações em Linha */}
-                              <div className="flex-1 flex items-center gap-3 text-xs">
-                                {/* Referência */}
-                                <div className="bg-blue-800/40 px-2 py-1 rounded border border-blue-400/30 min-w-[80px]">
-                                  <span className="text-white font-bold">{talao.talao_referencia}</span>
-                                </div>
-
-                                {/* Tamanho - Destaque */}
-                                <div className="bg-indigo-600/50 px-3 py-1 rounded border border-indigo-400/50 min-w-[60px] text-center">
-                                  <span className="text-white font-black text-base">{talao.talao_tamanho}</span>
-                                </div>
-
+                              <div className="flex items-center gap-6 flex-1">
                                 {/* Cor */}
                                 {(talao as any).descricao_cor && (
-                                  <div className="bg-blue-800/40 px-2 py-1 rounded border border-blue-400/30">
-                                    <span className="text-blue-200 font-medium">{(talao as any).descricao_cor}</span>
+                                  <div>
+                                    <p className="text-slate-400 text-xs mb-1">Cor</p>
+                                    <p className="text-white font-semibold text-sm">{(talao as any).descricao_cor}</p>
                                   </div>
                                 )}
-
+                                
                                 {/* Quantidade */}
-                                <div className="bg-blue-800/40 px-2 py-1 rounded border border-blue-400/30 flex items-center gap-1">
-                                  <span className="text-blue-200">📦</span>
-                                  <span className="text-white font-semibold">{talao.quantidade.toLocaleString()}</span>
-                                  {talao.quantidade_produzida !== undefined && talao.quantidade_produzida > 0 && (
-                                    <span className="text-green-300 text-[10px]">
-                                      ({talao.quantidade_produzida.toLocaleString()})
-                                    </span>
+                                <div>
+                                  <p className="text-slate-400 text-xs mb-1">Quantidade</p>
+                                  <p className="text-white font-bold text-lg">
+                                    {talao.quantidade.toLocaleString()} pçs
+                                    {talao.quantidade_produzida !== undefined && talao.quantidade_produzida > 0 && (
+                                      <span className="text-green-400 text-sm ml-1">
+                                        ({talao.quantidade_produzida})
+                                      </span>
+                                    )}
+                                  </p>
+                                </div>
+                                
+                                {/* Ciclo */}
+                                <div>
+                                  <p className="text-slate-400 text-xs mb-1">Tempo Ciclo</p>
+                                  <p className="text-white font-semibold text-base flex items-center gap-1">
+                                    <Clock className="w-4 h-4" />
+                                    {talao.tempo_ciclo_segundos}s
+                                  </p>
+                                </div>
+                                
+                                {/* Tempo Total */}
+                                <div>
+                                  <p className="text-slate-400 text-xs mb-1">Tempo Total</p>
+                                  <p className="text-white font-semibold text-base">
+                                    {Math.ceil((talao.tempo_ciclo_segundos * talao.quantidade) / 60)} min
+                                  </p>
+                                </div>
+                                
+                                {/* Matriz (se houver) */}
+                                {(talao as any).id_matriz && (
+                                  <div>
+                                    <p className="text-slate-400 text-xs mb-1">Matriz</p>
+                                    <p className="text-white font-medium text-sm">
+                                      #{(talao as any).id_matriz}
+                                      {(talao as any).matriz_multi_tamanhos && (
+                                        <span className="text-cyan-400 text-xs ml-1">(Multi)</span>
+                                      )}
+                                    </p>
+                                  </div>
+                                )}
+                                
+                                {/* Rejeitos (se houver) */}
+                                {talao.rejeitos !== undefined && talao.rejeitos > 0 && (
+                                  <div>
+                                    <p className="text-red-400 text-xs mb-1">Rejeitos</p>
+                                    <p className="text-red-300 font-bold text-base">{talao.rejeitos}</p>
+                                  </div>
+                                )}
+                              </div>
+
+                              {/* Badge de Status */}
+                              <div className="flex-shrink-0">
+                                <div className={`px-4 py-2 rounded-lg font-bold text-sm uppercase shadow-lg ${
+                                  isConcluidaTotal
+                                    ? 'bg-slate-600 text-white'
+                                    : isConcluidaParcial
+                                    ? 'bg-yellow-500 text-white'
+                                    : isAlocadoOutraMaquina
+                                    ? 'bg-yellow-500 text-white'
+                                    : isSelected
+                                    ? 'bg-green-500 text-white'
+                                    : isIniciada
+                                    ? 'bg-blue-500 text-white'
+                                    : 'bg-slate-600 text-slate-300'
+                                }`}>
+                                  {isConcluidaTotal && 'Finalizado'}
+                                  {isConcluidaParcial && 'Parcial'}
+                                  {isAlocadoOutraMaquina && `Máq. ${talao.id_maquina}`}
+                                  {!isFinalizada && !isAlocadoOutraMaquina && isSelected && 'Selecionado'}
+                                  {!isFinalizada && !isAlocadoOutraMaquina && isIniciada && !isSelected && 'Em Produção'}
+                                  {!isFinalizada && !isAlocadoOutraMaquina && !isIniciada && !isSelected && 'Disponível'}
+                                </div>
+                              </div>
+
+                              {/* Botões de Ação (se aplicável) */}
+                              {((talao.concluida_parcial && !talao.concluida_total) || 
+                                (!isFinalizada && !isAlocadoOutraMaquina && isIniciada && talao.id_maquina === machineId)) && (
+                                <div className="flex gap-2 flex-shrink-0">
+                                  {talao.concluida_parcial && !talao.concluida_total && (
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleRetomarTalao(talao, selectedMapa.estacoes[currentStationIndex].numero_estacao);
+                                      }}
+                                      className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm rounded-lg font-semibold transition-all shadow-md"
+                                    >
+                                      ▶ Retomar
+                                    </button>
+                                  )}
+                                  {!isFinalizada && !isAlocadoOutraMaquina && isIniciada && talao.id_maquina === machineId && (
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleFinishTalao(talao, selectedMapa.estacoes[currentStationIndex].numero_estacao);
+                                      }}
+                                      className="px-5 py-2 bg-red-600 hover:bg-red-700 text-white text-sm rounded-lg font-semibold transition-all shadow-md"
+                                    >
+                                      🏁 Finalizar
+                                    </button>
                                   )}
                                 </div>
-
-                                {/* Tempo de Ciclo */}
-                                <div className="bg-blue-800/40 px-2 py-1 rounded border border-blue-400/30 flex items-center gap-1">
-                                  <Clock className="w-3 h-3 text-blue-300" />
-                                  <span className="text-white font-semibold">{talao.tempo_ciclo_segundos}s</span>
-                                </div>
-
-                                {/* Tempo Total */}
-                                {talao.tempo_ciclo_segundos && talao.quantidade && (
-                                  <div className="bg-blue-800/40 px-2 py-1 rounded border border-blue-400/30">
-                                    <span className="text-blue-200">⏱️</span>
-                                    <span className="text-white font-semibold ml-1">
-                                      {Math.ceil((talao.tempo_ciclo_segundos * talao.quantidade) / 60)}min
-                                    </span>
-                                  </div>
-                                )}
-
-                                {/* Rejeitos */}
-                                {talao.rejeitos !== undefined && talao.rejeitos > 0 && (
-                                  <div className="bg-red-800/40 px-2 py-1 rounded border border-red-400/30 flex items-center gap-1">
-                                    <span className="text-red-300">❌</span>
-                                    <span className="text-red-200 font-semibold">{talao.rejeitos}</span>
-                                  </div>
-                                )}
-
-                                {/* Matriz */}
-                                {(talao as any).id_matriz && (
-                                  <div className="bg-blue-800/40 px-2 py-1 rounded border border-blue-400/30 flex items-center gap-1">
-                                    <span className="text-blue-200 text-[10px]">🔧</span>
-                                    <span className="text-white font-medium">#{(talao as any).id_matriz}</span>
-                                    {(talao as any).matriz_multi_tamanhos && (
-                                      <span className="text-cyan-300 text-[9px]">(M)</span>
-                                    )}
-                                  </div>
-                                )}
-
-                                {/* Cavidades */}
-                                {(talao as any).qt_cavidades_matriz_simples && (
-                                  <div className="bg-blue-800/40 px-2 py-1 rounded border border-blue-400/30">
-                                    <span className="text-blue-200 text-[10px]">🔲</span>
-                                    <span className="text-white font-medium ml-1">{(talao as any).qt_cavidades_matriz_simples}</span>
-                                  </div>
-                                )}
-                              </div>
-
-                              {/* Status e Botões de Ação */}
-                              <div className="flex-shrink-0 flex items-center gap-2">
-                                {/* Badge de Status */}
-                                <div className={`px-2 py-1 rounded text-[10px] font-bold uppercase ${
-                                  isConcluidaTotal
-                                    ? 'bg-gray-600/40 text-gray-300'
-                                    : isConcluidaParcial
-                                    ? 'bg-yellow-600/40 text-yellow-300'
-                                    : isAlocadoOutraMaquina
-                                    ? 'bg-yellow-600/40 text-yellow-300'
-                                    : isSelected
-                                    ? 'bg-green-600/40 text-green-300'
-                                    : isIniciada
-                                    ? 'bg-blue-600/40 text-blue-300'
-                                    : 'bg-blue-700/30 text-blue-300'
-                                }`}>
-                                  {isConcluidaTotal && '✓ Final'}
-                                  {isConcluidaParcial && `⚠ Parcial`}
-                                  {isAlocadoOutraMaquina && `🔒 M${talao.id_maquina}`}
-                                  {!isFinalizada && !isAlocadoOutraMaquina && isSelected && '✓ Sel'}
-                                  {!isFinalizada && !isAlocadoOutraMaquina && isIniciada && !isSelected && '▶ Prod'}
-                                  {!isFinalizada && !isAlocadoOutraMaquina && !isIniciada && !isSelected && '○ Disp'}
-                                </div>
-
-                                {/* Botões de Ação Compactos */}
-                                {talao.concluida_parcial && !talao.concluida_total && (
-                                  <button
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      handleRetomarTalao(talao, selectedMapa.estacoes[currentStationIndex].numero_estacao);
-                                    }}
-                                    className="px-2 py-1 bg-blue-500 hover:bg-blue-600 text-white text-[10px] rounded font-bold transition-all"
-                                    title="Retomar"
-                                  >
-                                    ▶️
-                                  </button>
-                                )}
-                                {!isFinalizada && !isAlocadoOutraMaquina && isIniciada && talao.id_maquina === machineId && (
-                                  <button
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      handleFinishTalao(talao, selectedMapa.estacoes[currentStationIndex].numero_estacao);
-                                    }}
-                                    className="px-2 py-1 bg-red-500 hover:bg-red-600 text-white text-[10px] rounded font-bold transition-all"
-                                    title="Finalizar"
-                                  >
-                                    🏁
-                                  </button>
-                                )}
-                              </div>
+                              )}
                             </div>
                           </div>
-                        );
-                      })}
-                    </div>
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
               )}
             </div>
           )}
+            </div>
+          </div>
+          
+          {/* Coluna Direita - Navegação Próxima (BARRA GRANDE) */}
+          {step === 'detalhes' && selectedMapa && selectedMapa.estacoes.length > 1 && (
+            <button
+              onClick={() => setCurrentStationIndex(i => Math.min(selectedMapa.estacoes.length - 1, i + 1))}
+              disabled={currentStationIndex === selectedMapa.estacoes.length - 1}
+              className="w-32 bg-gradient-to-l from-blue-600/40 via-blue-600/20 to-transparent hover:from-blue-600/60 disabled:from-slate-700/20 disabled:cursor-not-allowed transition-all duration-300 flex items-center justify-center group border-l border-slate-700"
+              aria-label="Próxima estação"
+            >
+              <div className="flex flex-col items-center gap-4">
+                <div className="text-white text-7xl font-black group-hover:scale-125 group-disabled:opacity-30 transition-all duration-300">→</div>
+                <span className="text-white text-sm font-bold uppercase tracking-widest rotate-90 transform origin-center whitespace-nowrap group-disabled:opacity-30">Próxima</span>
+              </div>
+            </button>
+          )}
         </div>
 
-        {/* Footer */}
-        <div className="p-6 bg-blue-900/60 backdrop-blur-sm border-t-2 border-blue-400/30">
-          <div className="flex items-center justify-between gap-4">
-            {/* Status da Seleção */}
-            <div className="flex items-center gap-3">
-              {step === 'detalhes' && selectedTaloes.length > 0 && (
-                <div className="flex items-center gap-3 bg-gradient-to-r from-green-500/30 to-emerald-500/30 px-5 py-3 rounded-xl border-2 border-green-400/50 backdrop-blur-sm shadow-lg">
-                  <div className="w-10 h-10 bg-green-500 rounded-xl flex items-center justify-center shadow-md">
-                    <CheckCircle2 className="w-6 h-6 text-white" />
-                  </div>
-                  <div>
-                    <p className="font-bold text-white text-lg">{selectedTaloes.length} produto(s) selecionado(s)</p>
-                    <p className="text-green-200 text-sm font-medium">
-                      {selectedTaloes.reduce((sum, t) => sum + t.quantidade, 0).toLocaleString()} peças no total
-                    </p>
-                  </div>
+        {/* Footer - FIXO na Parte Inferior (Sempre Visível) */}
+        <div className="bg-slate-800 border-t-2 border-slate-700 shadow-2xl flex-shrink-0">
+          {/* Tabela de Resumo - Acima dos Botões */}
+          {step === 'detalhes' && selectedTaloes.length > 0 && (() => {
+            // Agrupar talões por estação
+            const taloesPorEstacao = selectedTaloes.reduce((acc, talao) => {
+              const estacao = talao.estacao_numero;
+              if (!acc[estacao]) {
+                acc[estacao] = [];
+              }
+              acc[estacao].push(talao);
+              return acc;
+            }, {} as Record<number, typeof selectedTaloes>);
+            
+            const estacoesOrdenadas = Object.keys(taloesPorEstacao)
+              .map(Number)
+              .sort((a, b) => a - b);
+                        
+                        return (
+              <div className="border-b border-slate-700">
+                {/* Título da Seção */}
+                <div className="px-4 py-3 bg-slate-700/50 border-b border-slate-600">
+                  <h4 className="text-white font-bold text-sm uppercase tracking-wide">
+                    📋 Talões Alocados
+                  </h4>
                 </div>
-              )}
-            </div>
+                
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="bg-slate-700/50 border-b border-slate-600">
+                        <th className="px-4 py-2 text-left text-slate-400 font-semibold uppercase tracking-wide text-[10px] w-24">
+                          Info
+                        </th>
+                        {estacoesOrdenadas.map(estacao => (
+                          <th 
+                            key={estacao} 
+                            className="px-4 py-2 text-center text-white font-semibold border-l border-slate-600 min-w-[140px]"
+                          >
+                            <span className="text-sm">Estação {estacao}</span>
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-700/50">
+                      {/* Linha: Referência + Tamanho */}
+                      <tr className="hover:bg-slate-700/30">
+                        <td className="px-4 py-2 text-slate-400 font-semibold text-xs uppercase">
+                          Produto
+                        </td>
+                        {estacoesOrdenadas.map(estacao => (
+                          <td key={estacao} className="px-4 py-2 text-center border-l border-slate-700/50">
+                            <div className="space-y-1.5">
+                              {taloesPorEstacao[estacao].map((talao) => (
+                                <div key={talao.id_talao} className="flex items-center justify-center gap-2">
+                                  <span className="text-slate-200 font-semibold text-sm">{talao.talao_referencia}</span>
+                                  <span className="px-2 py-1 bg-blue-600 text-white font-bold rounded text-base">
+                                    {talao.talao_tamanho}
+                                    </span>
+                                </div>
+                              ))}
+                                </div>
+                          </td>
+                        ))}
+                      </tr>
+                      
+                      {/* Linha: Quantidade */}
+                      <tr className="hover:bg-slate-700/30">
+                        <td className="px-4 py-2 text-slate-400 font-semibold text-xs uppercase">
+                          Quantidade
+                        </td>
+                        {estacoesOrdenadas.map(estacao => (
+                          <td key={estacao} className="px-4 py-2 text-center border-l border-slate-700/50">
+                            <div className="space-y-1.5">
+                              {taloesPorEstacao[estacao].map((talao) => (
+                                <span 
+                                  key={talao.id_talao}
+                                  className="text-white font-bold text-sm block"
+                                >
+                                  {talao.quantidade.toLocaleString()} pçs
+                                    </span>
+                              ))}
+                                  </div>
+                          </td>
+                        ))}
+                      </tr>
+                    </tbody>
+                  </table>
+                            </div>
+                          </div>
+                        );
+          })()}
 
             {/* Botões de Ação */}
+          <div className="px-8 py-4 flex items-center justify-between gap-4">
             <div className="flex gap-3">
               {step === 'detalhes' && (
                 <button
                   onClick={() => setStep('mapas')}
-                  className="px-8 py-4 text-white hover:text-white bg-blue-600/50 hover:bg-blue-500/60 rounded-xl transition-all duration-200 font-bold border-2 border-blue-400/40 hover:border-blue-300/60 active:scale-95 shadow-lg text-lg"
+                    className="px-6 py-2.5 text-slate-300 hover:text-white bg-slate-700 hover:bg-slate-600 rounded-lg transition-all duration-200 font-semibold border border-slate-600 active:scale-95"
                 >
                   ← Voltar
                 </button>
@@ -894,31 +1000,31 @@ export const ProductionCommandsModal = React.memo(function ProductionCommandsMod
               
               <button
                 onClick={handleClose}
-                className="px-8 py-4 text-white hover:text-white bg-red-600/50 hover:bg-red-500/60 rounded-xl transition-all duration-200 font-bold border-2 border-red-400/40 hover:border-red-300/60 active:scale-95 shadow-lg text-lg"
+                  className="px-6 py-2.5 text-slate-300 hover:text-white bg-slate-700 hover:bg-slate-600 rounded-lg transition-all duration-200 font-semibold border border-slate-600 active:scale-95"
               >
-                ✕ Cancelar
+                  Cancelar
               </button>
+              </div>
 
               {step === 'detalhes' && selectedTaloes.length > 0 && (
                 <button
                   onClick={handleStartProduction}
                   disabled={loading}
-                  className="px-10 py-4 bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white rounded-xl font-black shadow-2xl hover:shadow-3xl disabled:opacity-50 transition-all duration-200 transform hover:scale-105 active:scale-95 flex items-center gap-3 disabled:cursor-not-allowed border-2 border-green-300/30 text-lg"
+                  className="px-8 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-lg font-bold shadow-lg hover:shadow-xl disabled:opacity-50 transition-all duration-200 active:scale-95 flex items-center gap-2 disabled:cursor-not-allowed"
                 >
                   {loading ? (
                     <>
-                      <LoadingSpinner className="w-6 h-6" />
+                      <LoadingSpinner className="w-5 h-5" />
                       <span>Iniciando...</span>
                     </>
                   ) : (
                     <>
-                      <Play className="w-6 h-6" />
-                      <span>🚀 Iniciar Produção</span>
+                      <Play className="w-5 h-5" />
+                      <span>Iniciar Produção</span>
                     </>
                   )}
                 </button>
               )}
-            </div>
           </div>
         </div>
       </div>

@@ -28,6 +28,7 @@ interface SidebarProps {
   onShowStops: () => void;
   onShowSettings: () => void;
   onShowProductionCommands: () => void;
+  onShowFinalizarProducoes?: () => void; // ✅ NOVO: Modal de finalizar produções
   onCollapsedChange: (collapsed: boolean) => void;
   secondaryOperator: string | null;
   onShowPreStopModal: () => void;
@@ -75,6 +76,7 @@ export function Sidebar({
   onShowStops, 
   onShowSettings, 
   onShowProductionCommands,
+  onShowFinalizarProducoes, // ✅ NOVO
   onShowPreStopModal,
   onCollapsedChange,
   secondaryOperator,
@@ -382,6 +384,25 @@ export function Sidebar({
               Produção
             </span>
           </button>
+
+          {/* ✅ NOVO: Botão Finalizar Produções Concluídas */}
+          {onShowFinalizarProducoes && (
+            <button
+              onClick={onShowFinalizarProducoes}
+              className={`
+                w-full flex items-center gap-3 px-3 py-2.5 rounded-lg
+                bg-emerald-600 hover:bg-emerald-700 text-white transition-colors
+                border border-emerald-400/40 shadow-lg shadow-emerald-900/30
+                focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300
+                ${isCollapsed ? 'justify-center' : 'justify-start'}
+              `}
+            >
+              <CheckCircle2 className="w-7 h-7" />
+              <span className={`transition-opacity duration-300 ${isCollapsed ? 'opacity-0 w-0' : 'opacity-100'}`}>
+                🏁 Finalizar Produções
+              </span>
+            </button>
+          )}
 
           {/* Botão de Parada Forçada / Retomada */}
           {!isMachineStopped ? (

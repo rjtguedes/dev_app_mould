@@ -1,6 +1,6 @@
 // 📊 Operator Dashboard com SSE + API REST
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useSSEManager } from '../hooks/useSSEManager';
 import { useSounds } from '../hooks/useSounds';
 import { SingleMachineViewNew } from '../components/SingleMachineView-new';
@@ -14,6 +14,8 @@ import { ErrorMessage } from '../components/ErrorMessage';
 import { ProductionCommandsModal } from '../components/ProductionCommandsModal';
 import { JustifyStopModal } from '../components/JustifyStopModal';
 import { LayoutConfigModal } from '../components/LayoutConfigModal';
+import { FinalizarProducoesModal } from '../components/FinalizarProducoesModal'; // ✅ NOVO
+import { AlertaSaldoZeroModal } from '../components/AlertaSaldoZeroModal'; // ✅ NOVO
 import { apiService } from '../services/apiService';
 import { layoutStorage } from '../lib/layoutStorage';
 import type { Machine } from '../types/machine';
@@ -60,6 +62,11 @@ export function OperatorDashboard({
   const [stopReasons, setStopReasons] = useState<StopReason[]>([]);
   const [loadingStopReasons, setLoadingStopReasons] = useState(false);
   const [validationExecuted, setValidationExecuted] = useState(false); // Prevenir loops
+
+  // ✅ NOVO: Estados para finalização de produções
+  const [showFinalizarProducoes, setShowFinalizarProducoes] = useState(false);
+  const [showAlertaSaldoZero, setShowAlertaSaldoZero] = useState(false);
+  const [alertaSaldoZeroJaMostrado, setAlertaSaldoZeroJaMostrado] = useState(false);
 
   // 🔊 Sons
   const { playAlert, playStop, playResume, playError, playSuccess } = useSounds();
@@ -197,20 +204,33 @@ export function OperatorDashboard({
     }
   }, [machineData, storedProduction, machine.id_maquina, validationExecuted]);
 
-  // ✅ NOVO: Consultar contexto automaticamente a cada 30 segundos
+  // ✅ OTIMIZADO: Consultar contexto automaticamente, MAS pausar quando modal estiver aberto
   useEffect(() => {
+    // ⚠️ NÃO consultar automaticamente se modal de produção estiver aberto
+    // Isso evita resetar seleções do usuário
+    if (showProductionCommands) {
+      console.log('⏸️ Modal aberto - pausando consultas automáticas de contexto');
+      return; // Não iniciar timers
+    }
+    
     console.log('⏰ Iniciando consulta automática de contexto (30s)...');
     
     // Consulta inicial após 5 segundos
     const initialTimer = setTimeout(() => {
-      console.log('🔄 Consulta inicial de contexto (5s após carregar)');
-      consultarContexto().catch(err => console.warn('⚠️ Erro na consulta inicial:', err));
+      if (!showProductionCommands) { // Verificar novamente antes de executar
+        console.log('🔄 Consulta inicial de contexto (5s após carregar)');
+        consultarContexto().catch(err => console.warn('⚠️ Erro na consulta inicial:', err));
+      }
     }, 5000);
 
     // Consulta periódica a cada 30 segundos
     const interval = setInterval(() => {
-      console.log('🔄 Consulta automática de contexto (30s)');
-      consultarContexto().catch(err => console.warn('⚠️ Erro na consulta automática:', err));
+      if (!showProductionCommands) { // Verificar se modal não está aberto
+        console.log('🔄 Consulta automática de contexto (30s)');
+        consultarContexto().catch(err => console.warn('⚠️ Erro na consulta automática:', err));
+      } else {
+        console.log('⏸️ Pulando consulta - modal está aberto');
+      }
     }, 30000);
 
     return () => {
@@ -218,7 +238,7 @@ export function OperatorDashboard({
       clearInterval(interval);
       console.log('⏰ Consulta automática de contexto encerrada');
     };
-  }, [consultarContexto]);
+  }, [consultarContexto, showProductionCommands]); // ✅ Adicionar showProductionCommands como dependência
 
   // Detectar tipo de máquina
   const isEvaMode = machine.nome?.toLowerCase().includes('eva') || false;
@@ -356,6 +376,149 @@ export function OperatorDashboard({
     console.log(`✅ childProductions atualizado com mudanças reais`);
     return newProductions;
   }, [childMachinesData, machine.id_maquina, contextoAtivo]);
+
+  // ✅ NOVO: Detectar TODAS as produções ativas (concluídas e parciais)
+  const todasProducoesAtivas = useMemo(() => {
+    console.log('🔍 Detectando produções ativas...');
+    console.log('📊 machineData:', machineData);
+    console.log('📊 childMachinesData:', childMachinesData);
+    console.log('📊 isMultipostos:', isMultipostos);
+    
+    const producoes: Array<{
+      id_maquina: number;
+      nome_maquina: string;
+      numero_estacao?: number;
+      id_talao: number;
+      talao_referencia: string;
+      talao_tamanho: string;
+      produto: string | null;
+      cor: string | null;
+      total_produzido: number;
+      total_a_produzir: number;
+      saldo: number;
+      rejeitos: number;
+      concluida: boolean;
+    }> = [];
+
+    // Verificar máquina raiz (single/rotativa) - ignorar se for multipostos (dados vêm das filhas)
+    if (!isMultipostos && machineData?.contexto?.producao_mapa) {
+      const pm = machineData.contexto.producao_mapa;
+      console.log('🎯 Produção da máquina raiz:', pm);
+      console.log('   id_mapa:', pm.id_mapa);
+      console.log('   qt_produzir:', pm.qt_produzir);
+      console.log('   sinais_validos:', pm.sinais_validos);
+      console.log('   saldo_a_produzir:', pm.saldo_a_produzir);
+      
+      // ✅ CORREÇÃO: Verificar se tem id_mapa e quantidade válida
+      if (pm.id_mapa && pm.qt_produzir > 0) {
+        console.log('✅ Máquina raiz tem produção ativa');
+        
+        // Para máquinas simples, usar dados do producao_mapa diretamente
+        producoes.push({
+          id_maquina: machine.id_maquina,
+          nome_maquina: machine.nome,
+          id_talao: pm.id_talao_estacao || 0,
+          talao_referencia: pm.talao_referencia || pm.produto_referencia || '',
+          talao_tamanho: pm.talao_tamanho || '',
+          produto: pm.produto_referencia || null,
+          cor: pm.descricao_cor || null,
+          // ✅ DADOS VÊM DO PRODUCAO_MAPA
+          total_produzido: pm.sinais_validos || 0,
+          total_a_produzir: pm.qt_produzir || 0,
+          saldo: pm.saldo_a_produzir || 0,
+          rejeitos: pm.rejeitos || 0,
+          concluida: (pm.saldo_a_produzir || 0) === 0
+        });
+      } else {
+        console.log('⚠️ Máquina raiz não tem produção ativa válida (sem id_mapa ou qt_produzir)');
+      }
+    } else if (!isMultipostos) {
+      console.log('⚠️ Nenhum producao_mapa na máquina raiz');
+    } else {
+      console.log('ℹ️ Multipostos - ignorando máquina raiz, usando dados das filhas');
+    }
+
+    // Verificar máquinas filhas (EVA/multipostos)
+    if (isMultipostos && childMachinesData.size > 0) {
+      console.log(`🔍 Verificando ${childMachinesData.size} máquinas filhas...`);
+      childMachinesData.forEach((child: any, id: number) => {
+        console.log(`   Máquina filha ${id}:`, child);
+        console.log('   producao_mapa:', child.producao_mapa);
+        
+        // ✅ EXPANDIR estrutura completa de um exemplo
+        if (child.producao_mapa?.taloes && child.producao_mapa.taloes.length > 0) {
+          console.log('   📦 TALÕES ENCONTRADOS:', child.producao_mapa.taloes);
+          console.log('   📦 Primeiro talão:', child.producao_mapa.taloes[0]);
+        }
+        
+        // ✅ CORREÇÃO: Verificar se tem id_mapa (indica produção ativa) e iterar sobre talões
+        if (child.producao_mapa?.id_mapa && child.producao_mapa.taloes?.length > 0) {
+          console.log(`   ✅ Máquina filha ${id} tem produção ativa (mapa ${child.producao_mapa.id_mapa})`);
+          
+          // ✅ IMPORTANTE: Dados de produção estão NO PRODUCAO_MAPA, não no talão!
+          const pm = child.producao_mapa;
+          
+          // Iterar sobre cada talão
+          pm.taloes.forEach((talao: any, tIdx: number) => {
+            console.log(`      📦 Processando talão ${tIdx}:`, talao);
+            console.log(`      📊 Dados do producao_mapa: qt_produzir=${pm.qt_produzir}, sinais_validos=${pm.sinais_validos}, saldo=${pm.saldo_a_produzir}`);
+            
+            // Verificar se tem quantidade a produzir (do producao_mapa, não do talão)
+            if (pm.qt_produzir > 0 || talao.quantidade_solicitada > 0) {
+              console.log(`      ✅ Adicionando talão ${tIdx} da máquina filha ${id}`);
+              producoes.push({
+                id_maquina: child.id_maquina,
+                nome_maquina: child.nome,
+                numero_estacao: pm.estacao_numero || child.numero_estacao || child.numero_posto,
+                id_talao: talao.id_talao || 0,
+                talao_referencia: talao.talao_referencia || '',
+                talao_tamanho: talao.talao_tamanho || '',
+                produto: talao.produto_referencia || pm.produto_referencia || null,
+                cor: talao.cor_descricao || pm.descricao_cor || null,
+                // ✅ DADOS VÊM DO PRODUCAO_MAPA, NÃO DO TALÃO
+                total_produzido: pm.sinais_validos || 0,
+                total_a_produzir: pm.qt_produzir || talao.quantidade_solicitada || 0,
+                saldo: pm.saldo_a_produzir || 0,
+                rejeitos: pm.rejeitos || 0,
+                concluida: (pm.saldo_a_produzir || 0) === 0
+              });
+            } else {
+              console.log(`      ⚠️ Talão ${tIdx} sem quantidade válida`);
+            }
+          });
+        } else {
+          console.log(`   ⚠️ Máquina filha ${id} sem produção ativa válida`);
+        }
+      });
+    } else {
+      console.log('⚠️ Não é multipostos ou não há máquinas filhas');
+    }
+
+    console.log(`📋 Total de produções detectadas: ${producoes.length}`);
+    console.log('📦 Produções:', producoes);
+    
+    return producoes;
+  }, [machineData, childMachinesData, machine, isMultipostos]);
+
+  // ✅ Filtrar apenas produções concluídas (saldo = 0)
+  const producoesConcluidas = useMemo(() => {
+    return todasProducoesAtivas.filter(p => p.concluida);
+  }, [todasProducoesAtivas]);
+
+  // ✅ NOVO: Alerta automático quando saldo chegar a 0
+  useEffect(() => {
+    if (producoesConcluidas.length > 0 && !alertaSaldoZeroJaMostrado && !showAlertaSaldoZero) {
+      console.log('🎉 Produções com saldo 0 detectadas:', producoesConcluidas);
+      playSuccess();
+      setShowAlertaSaldoZero(true);
+      setAlertaSaldoZeroJaMostrado(true);
+    }
+    
+    // Resetar flag quando todas as produções forem finalizadas
+    if (producoesConcluidas.length === 0 && alertaSaldoZeroJaMostrado) {
+      setAlertaSaldoZeroJaMostrado(false);
+    }
+  }, [producoesConcluidas, alertaSaldoZeroJaMostrado, showAlertaSaldoZero, playSuccess]);
 
   // ✅ Debug REDUZIDO: Removidos logs repetitivos
   // Apenas logs de otimização já mostram as mudanças importantes
@@ -574,77 +737,83 @@ export function OperatorDashboard({
     }
   };
 
-  // Handler para iniciar produção com mapa
-  const handleStartProductionWithMap = async (mapaId: number, taloes: TalaoSelecionado[]) => {
+  // Handler para iniciar produção com mapa - ✅ MEMOIZADO para evitar re-renders do modal
+  const handleStartProductionWithMap = useCallback(async (mapaId: number, taloes: TalaoSelecionado[]) => {
     try {
       console.log('🎯 Iniciando produção com mapa:', { mapaId, taloes, isMultipostos, isEvaMode });
 
-      // ✅ Para máquinas multipostos, determinar o id_maquina correto (estação filha)
-      let targetMachineId = machine.id_maquina; // Default: máquina raiz
-      
-      if (isMultipostos && taloes.length > 0) {
-        // ✅ VALIDAÇÃO: Todos os talões devem ser para a mesma estação
-        const estacaoNumero = taloes[0].estacao_numero;
-        const todosMesmaEstacao = taloes.every(t => t.estacao_numero === estacaoNumero);
+      // ✅ NOVO: Preparar payload único com todos os talões de todas as estações
+      const taloesComMaquinaFilha: Array<{
+        id_talao: number;
+        id_maquina_filha: number;
+        quantidade: number;
+        tempo_ciclo_segundos?: number;
+      }> = [];
+
+      // ✅ Para cada talão, fazer merge com a máquina filha correspondente
+      for (const talao of taloes) {
+        let idMaquinaFilha = machine.id_maquina; // Default: máquina raiz (para máquinas simples)
         
-        if (!todosMesmaEstacao) {
-          const estacoesDistintas = [...new Set(taloes.map(t => t.estacao_numero))];
-          console.error('❌ ERRO: Talões selecionados para estações diferentes:', estacoesDistintas);
-          throw new Error(`Não é possível iniciar produção em múltiplas estações simultaneamente. Selecione talões apenas da estação ${estacaoNumero}.`);
+        if (isMultipostos) {
+          // Buscar a estação filha correspondente no childMachinesData
+          const estacaoFilha = Array.from(childMachinesData.values()).find(
+            child => child.numero_estacao === talao.estacao_numero
+          );
+          
+          if (estacaoFilha && estacaoFilha.id_maquina) {
+            idMaquinaFilha = estacaoFilha.id_maquina;
+            console.log(`✅ Talão ${talao.id_talao} (Estação ${talao.estacao_numero}): Mapeado para máquina filha ${idMaquinaFilha}`);
+          } else {
+            console.warn(`⚠️ Talão ${talao.id_talao} (Estação ${talao.estacao_numero}): Máquina filha não encontrada - usando máquina raiz`);
+          }
         }
-        
-        // Buscar a estação filha correspondente no childMachinesData
-        const estacaoFilha = Array.from(childMachinesData.values()).find(
-          child => child.numero_estacao === estacaoNumero
-        );
-        
-        if (estacaoFilha && estacaoFilha.id_maquina) {
-          targetMachineId = estacaoFilha.id_maquina;
-          console.log(`✅ Máquina multiposto: Usando id_maquina da estação ${estacaoNumero}:`, {
-            estacao_nome: estacaoFilha.nome,
-            id_maquina_estacao: targetMachineId,
-            id_maquina_raiz: machine.id_maquina,
-            total_taloes: taloes.length
-          });
-        } else {
-          console.warn(`⚠️ Estação ${estacaoNumero} não encontrada em childMachinesData, usando máquina raiz`);
-        }
+
+        taloesComMaquinaFilha.push({
+          id_talao: talao.id_talao,
+          id_maquina_filha: idMaquinaFilha,
+          quantidade: talao.quantidade,
+          ...(talao.tempo_ciclo_segundos && { tempo_ciclo_segundos: talao.tempo_ciclo_segundos })
+        });
       }
 
-      // ✅ Preparar payload unificado
+      // ✅ Agrupar por estação apenas para logging
+      const taloesPorEstacao = taloes.reduce((acc, talao) => {
+        const estacao = talao.estacao_numero;
+        if (!acc[estacao]) {
+          acc[estacao] = [];
+        }
+        acc[estacao].push(talao);
+        return acc;
+      }, {} as Record<number, TalaoSelecionado[]>);
+      const estacoesDistintas = Object.keys(taloesPorEstacao).map(Number);
+      console.log(`🎯 Iniciando produção com ${taloes.length} talões em ${estacoesDistintas.length} estação(ões):`, estacoesDistintas);
+
+      // ✅ Preparar payload único com TODOS os talões
       const payload = {
-        id_maquina: targetMachineId, // ✅ Usar ID da estação filha para multipostos
+        id_maquina: machine.id_maquina, // ✅ SEMPRE a máquina raiz/pai
         id_mapa: mapaId,
-        taloes: taloes.map(t => ({
-          id_talao: t.id_talao,
-          estacao_numero: t.estacao_numero,
-          quantidade: t.quantidade,
-          // Para máquinas simples, incluir tempo_ciclo_segundos
-          // Para multipostos, esse campo pode ser opcional
-          ...(t.tempo_ciclo_segundos && { tempo_ciclo_segundos: t.tempo_ciclo_segundos })
-        }))
+        taloes: taloesComMaquinaFilha
       };
 
-      console.log('📤 Payload enviado:', payload);
+      console.log('📤 Payload completo:', payload);
 
       // ✅ Escolher endpoint baseado no tipo de máquina
       const isMultipostosOrEVA = isMultipostos || isEvaMode;
       const response = isMultipostosOrEVA
         ? await apiService.iniciarProducaoMapa(payload)  // POST /api/producao/iniciar
-        : await apiService.iniciarProducaoSimples(payload);  // POST /api/producao/iniciar-s
+        : await apiService.iniciarProducaoSimples(payload);  // POST /api/producao/iniciar-simples
       
       if (response.success) {
-        console.log('✅ Produção iniciada com sucesso');
+        console.log('✅ Produção iniciada com sucesso em todas as estações');
         playSuccess();
         
-        // ✅ NOVO: Consultar contexto atualizado logo após iniciar produção
+        // ✅ Consultar contexto atualizado após iniciar produção
         console.log('🔄 Consultando contexto atualizado após iniciar produção...');
         try {
           await consultarContexto();
           console.log('✅ Contexto atualizado após iniciar produção');
         } catch (contextError) {
           console.warn('⚠️ Erro ao consultar contexto após iniciar produção:', contextError);
-          // Não falhar se consulta de contexto der erro, produção já foi iniciada
         }
       } else {
         throw new Error(response.error || 'Erro ao iniciar produção');
@@ -654,10 +823,10 @@ export function OperatorDashboard({
       playError();
       throw error;
     }
-  };
+  }, [machine.id_maquina, isMultipostos, isEvaMode, childMachinesData, playSuccess, playError, consultarContexto]); // ✅ Dependências estáveis
 
-  // Handler for finishing session
-  const handleFinishSession = async () => {
+  // Handler for finishing session - ✅ MEMOIZADO para evitar re-renders do modal
+  const handleFinishSession = useCallback(async () => {
     try {
       console.log('🏁 Finalizando sessão para máquina:', machine.id_maquina);
 
@@ -678,7 +847,7 @@ export function OperatorDashboard({
       console.error('❌ Erro ao finalizar sessão:', error);
       throw error;
     }
-  };
+  }, [machine.id_maquina, operator?.id_operador, sessionId]); // ✅ Dependências estáveis
 
   // Buscar motivos de parada
   useEffect(() => {
@@ -841,6 +1010,7 @@ export function OperatorDashboard({
         onShowStops={() => console.log('🛑 Mostrar paradas - implementar')}
         onShowSettings={onShowSettings}
         onShowProductionCommands={() => setShowProductionCommands(true)}
+        onShowFinalizarProducoes={() => setShowFinalizarProducoes(true)} // ✅ NOVO
         onCollapsedChange={setSidebarCollapsed}
         secondaryOperator={secondaryOperator?.nome || null}
         onShowPreStopModal={() => console.log('⚠️ Modal pre-parada - implementar')}
@@ -1155,6 +1325,42 @@ export function OperatorDashboard({
           currentLayout={currentLayout}
           machineName={machine.nome}
           onSelectLayout={handleLayoutChange}
+        />
+
+        {/* ✅ NOVO: Modal de Finalizar Produções (Concluídas e Parciais) */}
+        <FinalizarProducoesModal
+          isOpen={showFinalizarProducoes}
+          onClose={() => setShowFinalizarProducoes(false)}
+          producoesConcluidas={todasProducoesAtivas}
+          onFinalizarSuccess={() => {
+            console.log('✅ Produções finalizadas - atualizando contexto');
+            consultarContexto().catch(err => console.warn('Erro ao atualizar contexto:', err));
+          }}
+        />
+
+        {/* ✅ NOVO: Alerta Automático de Saldo Zero */}
+        <AlertaSaldoZeroModal
+          isOpen={showAlertaSaldoZero}
+          onClose={() => setShowAlertaSaldoZero(false)}
+          producoes={producoesConcluidas.map(p => ({
+            id_maquina: p.id_maquina,
+            nome_maquina: p.nome_maquina,
+            numero_estacao: p.numero_estacao,
+            talao_referencia: p.talao_referencia,
+            talao_tamanho: p.talao_tamanho,
+            produto: p.produto,
+            cor: p.cor,
+            total_produzido: p.total_produzido,
+            total_a_produzir: p.total_a_produzir
+          }))}
+          onFinalizar={() => {
+            setShowAlertaSaldoZero(false);
+            setShowFinalizarProducoes(true);
+          }}
+          onIniciarNova={() => {
+            setShowAlertaSaldoZero(false);
+            setShowProductionCommands(true);
+          }}
         />
 
         {/* Justificar Parada agora na Sidebar (removido botão flutuante) */}

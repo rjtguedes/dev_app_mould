@@ -65,7 +65,7 @@ export interface IniciarProducaoMapaRequest {
 
 export interface TalaoProducaoRequest {
   id_talao: number;
-  estacao_numero: number;
+  id_maquina_filha: number; // ✅ ID da máquina filha (posto/estação)
   quantidade: number;
   tempo_ciclo_segundos?: number;
 }
