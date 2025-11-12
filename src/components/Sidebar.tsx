@@ -129,7 +129,7 @@ export function Sidebar({
 
   const handleLogoutClick = async () => {
     console.log('=== INÍCIO handleLogoutClick ===');
-    console.log('sessionId disponível:', sessionId);
+    console.log('sessionId (prop) disponível:', sessionId);
     console.log('machineId disponível:', machineId);
     
     if (!machineId) {
@@ -137,12 +137,25 @@ export function Sidebar({
       return;
     }
 
-    // ✅ sessionId é opcional - backend só precisa de machineId
+    // ✅ NOVO: Tentar recuperar id_sessao do localStorage se não vier como prop
     let sessionToEnd = sessionId;
     if (!sessionToEnd) {
-      console.log('⚠️ sessionId não disponível, mas backend só precisa de machineId - prosseguindo...');
+      const savedSessionId = localStorage.getItem('id_sessao');
+      const savedSessionActive = localStorage.getItem('sessao_ativa');
+      
+      if (savedSessionId && savedSessionActive === 'true') {
+        sessionToEnd = parseInt(savedSessionId);
+        console.log('✅ id_sessao recuperado do localStorage:', sessionToEnd);
+      } else {
+        console.log('⚠️ sessionId não disponível nem no prop nem no localStorage');
+        // Verificar se há sessão no contexto SSE
+        if (wsData?.contexto?.sessao_operador?.id_sessao) {
+          sessionToEnd = wsData.contexto.sessao_operador.id_sessao;
+          console.log('✅ id_sessao recuperado do contexto SSE:', sessionToEnd);
+        }
+      }
     } else {
-      console.log('✅ sessionId disponível:', sessionToEnd);
+      console.log('✅ sessionId disponível (via prop):', sessionToEnd);
     }
 
     // Armazenar o sessionId para usar no encerramento (pode ser null)
@@ -204,24 +217,59 @@ export function Sidebar({
     
     try {
       console.log('🔚 Encerrando sessão via API REST');
-      console.log('📤 Payload:', { id_maquina: machineId, id_sessao: currentSessionId || 'não disponível' });
+      console.log('📤 machineId:', machineId, typeof machineId);
+      console.log('📤 currentSessionId:', currentSessionId, typeof currentSessionId);
+      console.log('📤 operadorId:', operadorId, typeof operadorId);
       
-      // ✅ Backend só precisa de id_maquina, id_sessao é opcional
-      const response = await apiService.finalizarSessao({
-        id_maquina: machineId,
-        ...(currentSessionId ? { id_sessao: currentSessionId } : {}),
-        motivo: 'Sessão finalizada pelo operador'
-      });
+      // ✅ Construir payload completo (SEM motivo - backend não aceita)
+      const payload: any = {
+        id_maquina: machineId
+      };
+      
+      // Adicionar id_sessao se disponível
+      if (currentSessionId) {
+        payload.id_sessao = currentSessionId;
+      }
+      
+      // Adicionar id_operador se disponível
+      if (operadorId) {
+        payload.id_operador = operadorId;
+      }
+      
+      console.log('📤 Payload completo sendo enviado:', JSON.stringify(payload, null, 2));
+      
+      const response = await apiService.finalizarSessao(payload);
+
+      console.log('📥 Resposta da API:', response);
 
       if (!response.success) {
-        throw new Error(response.error || 'Erro ao finalizar sessão');
+        // ✅ NOVO: Detectar desalinhamento de sessão (backend não tem sessão ativa)
+        const errorMsg = response.error || '';
+        const isSessionMismatch = errorMsg.includes('Não há sessão ativa') || 
+                                   errorMsg.includes('sessão ativa para finalizar') ||
+                                   errorMsg.includes('400:');
+        
+        if (isSessionMismatch) {
+          console.warn('⚠️ Desalinhamento de sessão detectado - limpando localStorage e fazendo logout local');
+          // Não mostrar erro, apenas prosseguir com logout local
+        } else {
+          // Outros erros devem ser mostrados
+          const errorDetails = `${errorMsg}${response.status ? ` (HTTP ${response.status})` : ''}`;
+          console.error('❌ Erro ao finalizar sessão:', errorDetails);
+          setErrorModalMessage(errorDetails);
+          setEndingSession(false);
+          return; // Não fechar o modal, deixar usuário ver o erro
+        }
+      } else {
+        console.log('✅ Sessão finalizada com sucesso via API');
       }
 
-      console.log('✅ Sessão finalizada com sucesso via API');
-
-      // Limpar sessão salva do localStorage
-      localStorage.removeItem('industrack_active_session');
+      // ✅ Limpar sessão salva do localStorage (chaves corretas)
+      localStorage.removeItem('id_sessao');
+      localStorage.removeItem('sessao_ativa');
+      localStorage.removeItem('industrack_active_session'); // Limpar chave antiga
       localStorage.removeItem('industrack_current_production');
+      localStorage.removeItem('industrack_session'); // Limpar chave antiga
       console.log('🧹 Dados da sessão removidos do localStorage');
       
     } catch (err) {

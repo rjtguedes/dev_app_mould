@@ -16,7 +16,7 @@ export interface FinalizarSessaoRequest {
   id_maquina: number;
   id_operador?: number;
   id_sessao?: number; // novo campo opcional quando disponível no login
-  motivo?: string;
+  // ❌ motivo - backend não aceita este campo
 }
 
 export interface IniciarProducaoRequest {
@@ -114,9 +114,16 @@ class APIService {
       const url = getAPIUrl(endpoint);
       console.log(`📡 API Request: ${options.method || 'GET'} ${url}`);
       
-      // Log do body para requests POST/PUT (apenas para debug de login)
-      if (options.body && endpoint.includes('login')) {
-        console.log('📤 Request body (LOGIN):', options.body);
+      // ✅ Log do body para requests POST/PUT (exceto senhas)
+      if (options.body) {
+        try {
+          const bodyObj = JSON.parse(options.body as string);
+          const sanitizedBody = { ...bodyObj };
+          if (sanitizedBody.pin) sanitizedBody.pin = '****';
+          console.log('📤 Request body:', sanitizedBody);
+        } catch {
+          console.log('📤 Request body: [não-JSON]');
+        }
       }
 
       const response = await fetch(url, {
@@ -127,12 +134,31 @@ class APIService {
         ...options
       });
 
-      const data = await response.json();
+      console.log(`📥 Response status: ${response.status} ${response.statusText}`);
+
+      // ✅ NOVO: Tentar ler response como texto primeiro (para capturar erros 500 que não são JSON)
+      const responseText = await response.text();
+      console.log('📥 Response text:', responseText.substring(0, 500)); // Primeiros 500 chars
+      
+      let data: any;
+      try {
+        data = JSON.parse(responseText);
+      } catch (parseError) {
+        console.error('❌ Erro ao fazer parse do JSON:', parseError);
+        if (!response.ok) {
+          return {
+            success: false,
+            error: `Erro HTTP ${response.status}: ${responseText.substring(0, 200)}`,
+            status: response.status
+          };
+        }
+        throw new Error('Resposta inválida do servidor (não é JSON)');
+      }
       
       if (!response.ok) {
         console.error(`❌ API Error: ${response.status}`, data);
         // ✅ NOVO: Incluir status HTTP no erro para detectar autenticação
-        const errorMsg = data.error || `Erro HTTP ${response.status}`;
+        const errorMsg = data.error || data.message || data.detail || `Erro HTTP ${response.status}`;
         return {
           success: false,
           error: errorMsg,

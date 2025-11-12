@@ -1,7 +1,9 @@
 import { supabase } from './supabase';
 import type { Session, MachineParameters } from '../types/session';
 
-const SESSION_KEY = 'industrack_session';
+// ✅ NOVO: Sistema simplificado com duas chaves
+const SESSION_ID_KEY = 'id_sessao';
+const SESSION_ACTIVE_KEY = 'sessao_ativa';
 
 // Função utilitária para converter timestamp para fuso horário de Brasília
 export function toBrasiliaTime(timestamp: number): string {
@@ -287,16 +289,19 @@ export async function createSession(
     }
   }
   
-  // Store session ID locally
-  localStorage.setItem(SESSION_KEY, data.id.toString());
+  // ✅ Store session ID locally (chaves corretas)
+  localStorage.setItem(SESSION_ID_KEY, data.id.toString());
+  localStorage.setItem(SESSION_ACTIVE_KEY, 'true');
   console.log('ID da sessão armazenado no localStorage:', data.id);
   
   return data;
 }
 
 export async function recoverSession(): Promise<Session | null> {
-  const sessionId = localStorage.getItem(SESSION_KEY);
-  if (!sessionId) return null;
+  const sessionId = localStorage.getItem(SESSION_ID_KEY);
+  const sessionActive = localStorage.getItem(SESSION_ACTIVE_KEY);
+  
+  if (!sessionId || sessionActive !== 'true') return null;
 
   try {
     const { data, error } = await supabase
@@ -307,14 +312,16 @@ export async function recoverSession(): Promise<Session | null> {
       .single();
 
     if (error || !data) {
-      localStorage.removeItem(SESSION_KEY);
+      localStorage.removeItem(SESSION_ID_KEY);
+      localStorage.removeItem(SESSION_ACTIVE_KEY);
       return null;
     }
 
     return data;
   } catch (err) {
     console.error('Error recovering session:', err);
-    localStorage.removeItem(SESSION_KEY);
+    localStorage.removeItem(SESSION_ID_KEY);
+    localStorage.removeItem(SESSION_ACTIVE_KEY);
     return null;
   }
 }
@@ -371,9 +378,13 @@ export async function endSession(sessionId: number) {
   console.log('Sessão encerrada com sucesso:', data);
   console.log('Número de registros atualizados:', data?.length || 0);
 
-  // Clear session token
+  // ✅ Clear session token (chaves corretas)
   console.log('Removendo token do localStorage...');
-  localStorage.removeItem(SESSION_KEY);
+  localStorage.removeItem(SESSION_ID_KEY);
+  localStorage.removeItem(SESSION_ACTIVE_KEY);
+  // Limpar chaves antigas também
+  localStorage.removeItem('industrack_session');
+  localStorage.removeItem('industrack_active_session');
   console.log('Token da sessão removido do localStorage');
 
   // Buscar o ID da máquina da sessão para limpar machine_stats e criar encerramento_sessao

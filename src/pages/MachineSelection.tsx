@@ -28,13 +28,14 @@ export function MachineSelection({ initialMachine, onShowSettings, secondaryOper
   // ✅ NOVO: Carregar id_sessao salvo na inicialização
   useEffect(() => {
     try {
-      const savedSessionStr = localStorage.getItem('industrack_active_session');
-      if (savedSessionStr) {
-        const savedSession = JSON.parse(savedSessionStr);
-        if (savedSession.id_sessao) {
-          console.log('📖 ID da sessão carregado do localStorage:', savedSession.id_sessao);
-          setSessionId(savedSession.id_sessao);
-        }
+      const savedSessionId = localStorage.getItem('id_sessao');
+      const savedSessionActive = localStorage.getItem('sessao_ativa');
+      
+      if (savedSessionId && savedSessionActive === 'true') {
+        console.log('📖 ID da sessão carregado do localStorage:', savedSessionId);
+        setSessionId(parseInt(savedSessionId));
+      } else {
+        console.log('📋 Nenhuma sessão ativa encontrada no localStorage');
       }
     } catch (error) {
       console.error('❌ Erro ao carregar sessão salva:', error);
@@ -89,14 +90,7 @@ export function MachineSelection({ initialMachine, onShowSettings, secondaryOper
     loadUser();
   }, []);
 
-  // Recuperar sessão do localStorage
-  useEffect(() => {
-    const savedSessionId = localStorage.getItem('industrack_session');
-    if (savedSessionId) {
-      console.log('Sessão encontrada no localStorage:', savedSessionId);
-      setSessionId(parseInt(savedSessionId));
-    }
-  }, []);
+  // ✅ REMOVIDO: Código duplicado - sessão já é carregada no useEffect acima com as chaves corretas
 
   // Função para buscar o turno atual
   const fetchCurrentShift = async (machineId: number) => {

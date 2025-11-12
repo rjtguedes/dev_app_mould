@@ -1302,8 +1302,10 @@ export function useSSEManager(options: SSEManagerOptions) {
       const errorEvent = error as any;
       if (errorEvent?.target?.readyState === EventSource.CLOSED) {
         console.warn('⚠️ SSE Manager: Conexão fechada - pode ser erro de autenticação');
-        // Limpar sessão salva para permitir novo login
-        localStorage.removeItem('industrack_active_session');
+        // ✅ Limpar sessão salva para permitir novo login (chaves corretas)
+        localStorage.removeItem('id_sessao');
+        localStorage.removeItem('sessao_ativa');
+        localStorage.removeItem('industrack_active_session'); // Limpar chave antiga
         console.log('🧹 SSE Manager: Sessão salva removida devido a erro de conexão');
       }
     }
@@ -1342,7 +1344,10 @@ export function useSSEManager(options: SSEManagerOptions) {
         
         if (isAuthError) {
           console.warn('⚠️ SSE Manager: Erro de autenticação detectado, limpando sessão salva');
-          localStorage.removeItem('industrack_active_session');
+          // ✅ Limpar sessão salva (chaves corretas)
+          localStorage.removeItem('id_sessao');
+          localStorage.removeItem('sessao_ativa');
+          localStorage.removeItem('industrack_active_session'); // Limpar chave antiga
           console.log('🧹 SSE Manager: Sessão salva removida devido a erro de autenticação');
         }
       }
@@ -1354,7 +1359,10 @@ export function useSSEManager(options: SSEManagerOptions) {
       // ✅ NOVO: Se erro for de autenticação (401/403), limpar sessão salva
       if (errorMsg.includes('401') || errorMsg.includes('403') || errorMsg.includes('não autorizado') || errorMsg.includes('autenticação')) {
         console.warn('⚠️ SSE Manager: Erro de autenticação detectado no catch, limpando sessão salva');
-        localStorage.removeItem('industrack_active_session');
+        // ✅ Limpar sessão salva (chaves corretas)
+        localStorage.removeItem('id_sessao');
+        localStorage.removeItem('sessao_ativa');
+        localStorage.removeItem('industrack_active_session'); // Limpar chave antiga
         console.log('🧹 SSE Manager: Sessão salva removida devido a erro de autenticação');
       }
     } finally {
@@ -1384,12 +1392,25 @@ export function useSSEManager(options: SSEManagerOptions) {
     });
     
     if (!response.success) {
-      setError(response.error || 'Erro ao finalizar sessão');
-    } else {
-      // ✅ NOVO: Limpar sessão salva quando finalizar
-      console.log('🧹 Limpando sessão salva do localStorage após finalização');
-      localStorage.removeItem('industrack_active_session');
+      // ✅ NOVO: Detectar desalinhamento de sessão (backend não tem sessão ativa)
+      const errorMsg = response.error || '';
+      const isSessionMismatch = errorMsg.includes('Não há sessão ativa') || 
+                                 errorMsg.includes('sessão ativa para finalizar') ||
+                                 errorMsg.includes('400:');
+      
+      if (isSessionMismatch) {
+        console.warn('⚠️ useSSEManager: Desalinhamento de sessão detectado - limpando localStorage');
+        // Não mostrar erro, apenas limpar localStorage e prosseguir
+      } else {
+        setError(response.error || 'Erro ao finalizar sessão');
+      }
     }
+    
+    // ✅ Limpar sessão salva quando finalizar (chaves corretas) - independente de sucesso/erro
+    console.log('🧹 Limpando sessão salva do localStorage após finalização');
+    localStorage.removeItem('id_sessao');
+    localStorage.removeItem('sessao_ativa');
+    localStorage.removeItem('industrack_active_session'); // Limpar chave antiga
     
     return response;
   }, [machineId]);

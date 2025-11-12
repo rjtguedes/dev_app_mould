@@ -114,7 +114,10 @@ export function useSSEConnection(options: SSEConnectionOptions) {
         // ✅ NOVO: Se muitas tentativas falharam, pode ser erro de autenticação
         if (failedAttemptsRef.current >= maxFailedAttempts) {
           console.warn('⚠️ SSE: Múltiplas tentativas de conexão falharam - limpando sessão salva');
-          localStorage.removeItem('industrack_active_session');
+          // ✅ Limpar sessão salva (chaves corretas)
+          localStorage.removeItem('id_sessao');
+          localStorage.removeItem('sessao_ativa');
+          localStorage.removeItem('industrack_active_session'); // Limpar chave antiga
           console.log('🧹 SSE: Sessão salva removida após múltiplas falhas de conexão');
           // Não tentar reconectar mais - deixar usuário fazer login
           onErrorRef.current?.(event);

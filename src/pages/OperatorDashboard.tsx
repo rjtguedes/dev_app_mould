@@ -142,26 +142,32 @@ export function OperatorDashboard({
     const producaoBackend = ctx.producao_mapa;
     const sessaoBackend = ctx.sessao_operador;
     
+    // ✅ NOVO: Usar chaves corretas do localStorage
+    const savedSessionId = localStorage.getItem('id_sessao');
+    const savedSessionActive = localStorage.getItem('sessao_ativa');
+    
     console.log('🔍 Validando dados locais vs backend:', {
       tem_sessao_backend: !!sessaoBackend,
       tem_producao_backend: !!producaoBackend,
-      tem_sessao_local: !!localStorage.getItem('industrack_active_session'),
+      tem_sessao_local: !!(savedSessionId && savedSessionActive === 'true'),
       tem_producao_local: !!storedProduction
     });
     
     // ✅ VALIDAÇÃO 1: Sessão local vs Backend
-    const savedSessionStr = localStorage.getItem('industrack_active_session');
-    if (savedSessionStr) {
+    if (savedSessionId && savedSessionActive === 'true') {
       try {
-        const savedSession = JSON.parse(savedSessionStr);
+        const savedSessionIdNum = parseInt(savedSessionId);
         
         // ⚠️ CUIDADO: Só limpar se backend realmente NÃO tem sessão (não apenas undefined)
         // Backend pode demorar para enviar sessao_operador na primeira mensagem
         if (!sessaoBackend && sessaoBackend !== undefined) {
           console.warn('⚠️ Backend confirmou que não há sessão ativa - limpando dados locais');
-          localStorage.removeItem('industrack_active_session');
+          localStorage.removeItem('id_sessao');
+          localStorage.removeItem('sessao_ativa');
           localStorage.removeItem('industrack_current_production');
           localStorage.removeItem('industrack_current_machine');
+          // Limpar chaves antigas também
+          localStorage.removeItem('industrack_active_session');
           setValidationExecuted(true);
           // Forçar reload para voltar ao login (só executa uma vez)
           setTimeout(() => window.location.reload(), 1000);
@@ -169,15 +175,10 @@ export function OperatorDashboard({
         }
         
         // Se backend tem sessão diferente da local, atualizar localStorage (sem reload)
-        if (sessaoBackend && sessaoBackend.id_sessao && savedSession.id_sessao !== sessaoBackend.id_sessao) {
+        if (sessaoBackend && sessaoBackend.id_sessao && savedSessionIdNum !== sessaoBackend.id_sessao) {
           console.log('ℹ️ Sessão local diferente do backend - sincronizando localStorage');
-          const newSession = {
-            id_sessao: sessaoBackend.id_sessao,
-            id_operador: sessaoBackend.id_operador,
-            id_maquina: machine.id_maquina,
-            timestamp: Date.now()
-          };
-          localStorage.setItem('industrack_active_session', JSON.stringify(newSession));
+          localStorage.setItem('id_sessao', String(sessaoBackend.id_sessao));
+          localStorage.setItem('sessao_ativa', 'true');
         }
       } catch (e) {
         console.error('❌ Erro ao validar sessão:', e);
@@ -833,8 +834,8 @@ export function OperatorDashboard({
       const response = await apiService.finalizarSessao({
         id_maquina: machine.id_maquina,
         id_operador: operator?.id_operador,
-        id_sessao: sessionId || undefined,
-        motivo: 'Sessão finalizada pelo operador'
+        id_sessao: sessionId || undefined
+        // ❌ motivo removido - backend não aceita
       });
       
       if (response.success) {

@@ -410,14 +410,28 @@ export const ProductionCommandsModal = React.memo(function ProductionCommandsMod
         await onFinishSession();
       } else {
         const response = await apiService.finalizarSessao({
-          id_maquina: machineId,
-          motivo: 'Sessão finalizada pelo operador'
+          id_maquina: machineId
+          // ❌ motivo removido - backend não aceita
         });
 
         if (response.success) {
           console.log('✅ Sessão finalizada com sucesso');
         } else {
-          throw new Error(response.error || 'Erro ao finalizar sessão');
+          // ✅ NOVO: Detectar desalinhamento de sessão
+          const errorMsg = response.error || '';
+          const isSessionMismatch = errorMsg.includes('Não há sessão ativa') || 
+                                     errorMsg.includes('sessão ativa para finalizar') ||
+                                     errorMsg.includes('400:');
+          
+          if (isSessionMismatch) {
+            console.warn('⚠️ ProductionCommandsModal: Desalinhamento de sessão detectado - apenas limpando localStorage');
+            // Limpar localStorage e prosseguir
+            localStorage.removeItem('id_sessao');
+            localStorage.removeItem('sessao_ativa');
+            localStorage.removeItem('industrack_active_session');
+          } else {
+            throw new Error(response.error || 'Erro ao finalizar sessão');
+          }
         }
       }
       
