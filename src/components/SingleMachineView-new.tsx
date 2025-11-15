@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Trash2, AlertCircle, Info, CheckCircle2, Play, Pause, Target, TrendingUp, XCircle } from 'lucide-react';
 import type { MachineDataNew } from '../types/websocket-new';
 
@@ -39,8 +39,15 @@ export function SingleMachineViewNew({
   // ✅ USAR DADOS DIRETAMENTE DO BACKEND - SEM CÁLCULOS
   // O backend já envia tudo calculado, apenas exibimos o que vem
   
-  // Estrutura do backend: pode vir com ou sem 'contexto' wrapper
-  const dadosBackend = (machineData as any)?.contexto ?? machineData as any;
+  // Estrutura do backend: pode vir com wrapper { success, data } ou com campo 'contexto'
+  const unwrappedData = useMemo(() => {
+    if (machineData && typeof machineData === 'object' && 'success' in (machineData as any) && 'data' in (machineData as any)) {
+      return (machineData as any).data;
+    }
+    return machineData;
+  }, [machineData]);
+
+  const dadosBackend = (unwrappedData as any)?.contexto ?? (unwrappedData as any)?.contexto_padrao ?? (unwrappedData as any);
   
   // Extrair dados básicos da máquina
   const id = dadosBackend?.id_maquina ?? dadosBackend?.id ?? 69;
@@ -54,7 +61,7 @@ export function SingleMachineViewNew({
   const producao_turno = dadosBackend?.producao_turno ?? null;
   const producao_mapa = dadosBackend?.producao_mapa ?? null;
   const estatisticas = (dadosBackend as any)?.estatisticas ?? null;
-  const sessao_operador = React.useMemo(() => {
+  const sessao_operador = useMemo(() => {
     if (!sessao_operador_raw) return null;
     const needsCounters = sessao_operador_raw.sinais === undefined && sessao_operador_raw.sinais_validos === undefined && sessao_operador_raw.rejeitos === undefined;
     if (!needsCounters) return sessao_operador_raw;

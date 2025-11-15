@@ -1315,24 +1315,14 @@ export function useSSEManager(options: SSEManagerOptions) {
 
   // Consultar contexto inicial
   const consultarContexto = useCallback(async () => {
-    if (!machineId) {
-      console.log('⚠️ SSE Manager: consultarContexto chamado sem machineId');
-      return;
-    }
-    
-    console.log(`🔍 SSE Manager: Consultando contexto para máquina ${machineId}...`);
-    setIsLoading(true);
     try {
       const response = await apiService.consultarContexto(machineId);
-      console.log(`📡 SSE Manager: Resposta do consultarContexto:`, response);
       
       if (response.success && response.data) {
-        console.log(`✅ SSE Manager: Contexto recebido com sucesso:`, response.data);
         // Processar contexto inicial e atualizar máquinas filhas
         processInitialContext(response.data);
         setError(null);
       } else {
-        console.error(`❌ SSE Manager: Erro na resposta do contexto:`, response.error);
         const errorMsg = response.error || 'Erro ao consultar contexto';
         setError(errorMsg);
         
@@ -1365,8 +1355,6 @@ export function useSSEManager(options: SSEManagerOptions) {
         localStorage.removeItem('industrack_active_session'); // Limpar chave antiga
         console.log('🧹 SSE Manager: Sessão salva removida devido a erro de autenticação');
       }
-    } finally {
-      setIsLoading(false);
     }
   }, [machineId, processInitialContext]);
 

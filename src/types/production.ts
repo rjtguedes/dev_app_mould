@@ -95,3 +95,53 @@ export interface TalaoSelecionado {
   talao_referencia: string;
   talao_tamanho: string;
 }
+
+export interface ChildMachineProduto {
+  referencia: string | null;
+  descricao?: string | null;
+  cor?: string | null;
+}
+
+export interface ChildMachineGrade {
+  id: number | string;
+  tamanho: string | null;
+  quantidade: number;
+  quantidade_produzida?: number;
+  minutos_estimado?: number;
+  saldo?: number;
+}
+
+export interface ChildMachineProduction {
+  machine: {
+    id_maquina: number;
+    nome: string;
+    numero_estacao?: number;
+    maquina_pai?: number | null;
+    maquina_filha?: boolean;
+  };
+  stats: {
+    produzido: number;
+    rejeitos: number;
+    ultimo_sinal: number | null;
+    minutos_disponivel: number;
+    velocidade?: number;
+  };
+  parameters: {
+    producao_ativa: boolean;
+    produto?: ChildMachineProduto | null;
+  };
+  produto: ChildMachineProduto | null;
+  grade: ChildMachineGrade | null;
+  websocket_data?: {
+    sessao_operador?: any;
+    producao_turno?: any;
+    producao_mapa?: any;
+    highlight_until?: number;
+  };
+  contexto_exibido?: 'sessao' | 'turno' | 'taloes';
+  dados_contexto?: {
+    sessao?: any;
+    turno?: any;
+    taloes?: any;
+  };
+}

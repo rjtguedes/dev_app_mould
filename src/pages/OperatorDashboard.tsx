@@ -244,6 +244,18 @@ export function OperatorDashboard({
   // Detectar tipo de máquina
   const isEvaMode = machine.nome?.toLowerCase().includes('eva') || false;
   const isMultipostos = machine.multipostos === true;
+  const producaoMapaAtiva = machineData?.contexto?.producao_mapa || null;
+  const hasProducaoMapaAtiva = Boolean(
+    producaoMapaAtiva &&
+    (
+      producaoMapaAtiva.id_mapa ||
+      producaoMapaAtiva.id_talao_estacao ||
+      (producaoMapaAtiva.saldo_a_produzir ??
+        producaoMapaAtiva.qt_produzir ??
+        (producaoMapaAtiva as any).quantidade_programada ??
+        0) > 0
+    )
+  );
 
   // ✅ Referência anterior para comparação
   const prevChildProductionsRef = React.useRef<ChildMachineProduction[]>([]);
@@ -258,6 +270,43 @@ export function OperatorDashboard({
     }
 
     const newProductions = Array.from(childMachinesData.entries()).map(([machineId, childData]) => {
+      const producaoMapaFilha = childData.producao_mapa || null;
+      const taloesFilha = producaoMapaFilha?.taloes || [];
+      const currentTalao =
+        taloesFilha.find(
+          (t: any) =>
+            (t.id_talao ?? t.id) === producaoMapaFilha?.id_talao_estacao
+        ) || taloesFilha[0];
+
+      const produtoInfo = producaoMapaFilha
+        ? {
+            referencia:
+              currentTalao?.talao_referencia ||
+              producaoMapaFilha.talao_referencia ||
+              producaoMapaFilha.produto_referencia ||
+              null,
+            descricao:
+              currentTalao?.descricao_cor ||
+              producaoMapaFilha.descricao_cor ||
+              null,
+            cor:
+              currentTalao?.cor_descricao ||
+              producaoMapaFilha.descricao_cor ||
+              null
+          }
+        : null;
+
+      const quantidadeTotal =
+        currentTalao?.quantidade_solicitada ??
+        currentTalao?.quantidade ??
+        producaoMapaFilha?.qt_produzir ??
+        producaoMapaFilha?.quantidade_programada ??
+        0;
+
+      const minutosDecorridos = producaoMapaFilha?.tempo_decorrido_segundos
+        ? Math.floor(producaoMapaFilha.tempo_decorrido_segundos / 60)
+        : 0;
+
       // Selecionar dados baseado no contexto ativo
       let displayData = { sinais: 0, rejeitos: 0, sinais_validos: 0 };
       
@@ -288,8 +337,33 @@ export function OperatorDashboard({
       }
 
       // ✅ Log reduzido: Removido log repetitivo de cada estação
-        
-        return {
+      const sinaisMapa =
+        producaoMapaFilha?.sinais_validos ??
+        producaoMapaFilha?.sinais ??
+        displayData.sinais;
+      const rejeitosMapa =
+        producaoMapaFilha?.rejeitos ?? displayData.rejeitos ?? 0;
+
+      const gradeInfo = currentTalao
+        ? {
+            id:
+              currentTalao.id_talao ??
+              currentTalao.id ??
+              `${machineId}-${currentTalao.talao_tamanho || 'grade'}`,
+            tamanho:
+              currentTalao.talao_tamanho ||
+              producaoMapaFilha?.talao_tamanho ||
+              null,
+            quantidade: quantidadeTotal,
+            quantidade_produzida: sinaisMapa,
+            minutos_estimado: producaoMapaFilha?.tempo_estimado
+              ? Math.ceil(producaoMapaFilha.tempo_estimado / 60)
+              : undefined,
+            saldo: producaoMapaFilha?.saldo_a_produzir ?? 0
+          }
+        : null;
+
+      return {
         machine: {
           id_maquina: machineId,
           nome: childData.nome,
@@ -297,17 +371,19 @@ export function OperatorDashboard({
           maquina_pai: machine.id_maquina,
           maquina_filha: true
         },
-          stats: {
-          produzido: displayData.sinais,
-          rejeitos: displayData.rejeitos,
+        stats: {
+          produzido: sinaisMapa,
+          rejeitos: rejeitosMapa,
           ultimo_sinal: childData.ultimo_sinal || null,
-          minutos_disponivel: 0
+          minutos_disponivel: minutosDecorridos,
+          velocidade: childData.velocidade || 0
         },
         parameters: {
-          producao_ativa: childData.status || false
+          producao_ativa: Boolean(producaoMapaFilha?.id_mapa) || childData.status || false,
+          produto: produtoInfo
         },
-        produto: null,
-        grade: null,
+        produto: produtoInfo,
+        grade: gradeInfo,
           // ✅ CORRIGIDO: Passar TODOS os dados, não apenas o contexto ativo
           websocket_data: {
             sessao_operador: childData.sessao_operador || {
@@ -743,24 +819,39 @@ export function OperatorDashboard({
     try {
       console.log('🎯 Iniciando produção com mapa:', { mapaId, taloes, isMultipostos, isEvaMode });
 
-      // ✅ NOVO: Preparar payload único com todos os talões de todas as estações
-      const taloesComMaquinaFilha: Array<{
+      // ✅ NOVO: Preparar payloads de talões para cada tipo de máquina
+      // Para máquinas simples, validar que todos talões pertencem à estação 1
+      if (!(isMultipostos || isEvaMode)) {
+        const taloesInvalidos = taloes.filter(talao => talao.estacao_numero !== 1);
+        if (taloesInvalidos.length > 0) {
+          const refs = taloesInvalidos.map(t => `${t.talao_referencia} (estação ${t.estacao_numero})`).join(', ');
+          alert(`❌ Máquina simples só aceita talões da estação 1.\nRemova: ${refs}`);
+          throw new Error('Máquina simples com talões fora da estação 1');
+        }
+      }
+
+      const taloesParaSimples = taloes.map(talao => ({
+        id_talao: talao.id_talao,
+        estacao_numero: talao.estacao_numero,
+        id_maquina_filha: machine.id_maquina,
+        quantidade: talao.quantidade,
+        ...(talao.tempo_ciclo_segundos && { tempo_ciclo_segundos: talao.tempo_ciclo_segundos })
+      }));
+
+      const taloesParaMultipostos: Array<{
         id_talao: number;
         id_maquina_filha: number;
         quantidade: number;
         tempo_ciclo_segundos?: number;
-      }> = [];
+      }> = taloes.map(talao => {
+        let idMaquinaFilha = machine.id_maquina; // Default: máquina raiz
 
-      // ✅ Para cada talão, fazer merge com a máquina filha correspondente
-      for (const talao of taloes) {
-        let idMaquinaFilha = machine.id_maquina; // Default: máquina raiz (para máquinas simples)
-        
         if (isMultipostos) {
           // Buscar a estação filha correspondente no childMachinesData
           const estacaoFilha = Array.from(childMachinesData.values()).find(
             child => child.numero_estacao === talao.estacao_numero
           );
-          
+
           if (estacaoFilha && estacaoFilha.id_maquina) {
             idMaquinaFilha = estacaoFilha.id_maquina;
             console.log(`✅ Talão ${talao.id_talao} (Estação ${talao.estacao_numero}): Mapeado para máquina filha ${idMaquinaFilha}`);
@@ -769,13 +860,13 @@ export function OperatorDashboard({
           }
         }
 
-        taloesComMaquinaFilha.push({
+        return {
           id_talao: talao.id_talao,
           id_maquina_filha: idMaquinaFilha,
           quantidade: talao.quantidade,
           ...(talao.tempo_ciclo_segundos && { tempo_ciclo_segundos: talao.tempo_ciclo_segundos })
-        });
-      }
+        };
+      });
 
       // ✅ Agrupar por estação apenas para logging
       const taloesPorEstacao = taloes.reduce((acc, talao) => {
@@ -790,19 +881,27 @@ export function OperatorDashboard({
       console.log(`🎯 Iniciando produção com ${taloes.length} talões em ${estacoesDistintas.length} estação(ões):`, estacoesDistintas);
 
       // ✅ Preparar payload único com TODOS os talões
-      const payload = {
-        id_maquina: machine.id_maquina, // ✅ SEMPRE a máquina raiz/pai
-        id_mapa: mapaId,
-        taloes: taloesComMaquinaFilha
-      };
-
-      console.log('📤 Payload completo:', payload);
-
-      // ✅ Escolher endpoint baseado no tipo de máquina
+      // ✅ Escolher endpoint e payload baseado no tipo de máquina
       const isMultipostosOrEVA = isMultipostos || isEvaMode;
-      const response = isMultipostosOrEVA
-        ? await apiService.iniciarProducaoMapa(payload)  // POST /api/producao/iniciar
-        : await apiService.iniciarProducaoSimples(payload);  // POST /api/producao/iniciar-simples
+      let response;
+
+      if (isMultipostosOrEVA) {
+        const payloadMultiposto = {
+          id_maquina: machine.id_maquina, // ✅ SEMPRE a máquina raiz/pai
+          id_mapa: mapaId,
+          taloes: taloesParaMultipostos
+        };
+        console.log('📤 Payload multiposto:', payloadMultiposto);
+        response = await apiService.iniciarProducaoMapa(payloadMultiposto);  // POST /api/producao/iniciar
+      } else {
+        const payloadSimples = {
+          id_maquina: machine.id_maquina,
+          id_mapa: mapaId,
+          taloes: taloesParaSimples
+        };
+        console.log('📤 Payload simples:', payloadSimples);
+        response = await apiService.iniciarProducaoSimples(payloadSimples);  // POST /api/producao/iniciar-simples
+      }
       
       if (response.success) {
         console.log('✅ Produção iniciada com sucesso em todas as estações');
@@ -1090,19 +1189,19 @@ export function OperatorDashboard({
       />
 
       {/* Main Content */}
-      <main className={`flex-1 transition-all duration-300 ${sidebarCollapsed ? 'ml-16' : 'ml-64'} pt-16 p-6`}>
+      <main className={`flex-1 transition-all duration-300 ${sidebarCollapsed ? 'ml-12' : 'ml-56'} pt-12 px-4 pb-6 gap-4 flex flex-col`}>
         {/* Indicador de Produção Atual - BASEADO NO BACKEND (SSE) - Esconder nos layouts EVA 16 e Rotativas */}
-        {machineData?.contexto?.producao_mapa && !(currentLayout === 'eva_16_stations' && isMultipostos) && !(currentLayout === 'rotativas' && isMultipostos) && (
+        {hasProducaoMapaAtiva && !(currentLayout === 'eva_16_stations' && isMultipostos) && !(currentLayout === 'rotativas' && isMultipostos) && (
           <div className="mb-4 bg-green-600/20 border border-green-400/40 rounded-xl p-4 text-sm text-green-100 flex items-center justify-between">
             <div className="flex items-center gap-3">
               <span className="px-2 py-1 rounded-lg bg-green-500/30 border border-green-400/60 font-bold uppercase text-xs">Em Produção</span>
-              <span className="font-semibold">Mapa #{machineData.contexto.producao_mapa.id_mapa}</span>
+              <span className="font-semibold">Mapa #{producaoMapaAtiva?.id_mapa ?? 'N/A'}</span>
               <span className="opacity-80">•</span>
-              <span className="font-semibold">Talão #{machineData.contexto.producao_mapa.id_talao_estacao || 'N/A'}</span>
-              {machineData.contexto.producao_mapa.saldo_a_produzir !== undefined && (
+              <span className="font-semibold">Talão #{producaoMapaAtiva?.id_talao_estacao || 'N/A'}</span>
+              {producaoMapaAtiva?.saldo_a_produzir !== undefined && (
                 <>
                   <span className="opacity-80">•</span>
-                  <span className="font-semibold text-yellow-200">Saldo: {machineData.contexto.producao_mapa.saldo_a_produzir}</span>
+                  <span className="font-semibold text-yellow-200">Saldo: {producaoMapaAtiva?.saldo_a_produzir}</span>
                 </>
               )}
               {storedProduction && storedProduction.taloes && storedProduction.taloes.length > 1 && (

@@ -30,7 +30,34 @@ export function RotativasStationsView({
   contextoAtivo,
   onAddReject
 }: RotativasStationsViewProps) {
-  
+  const isMachineStopped =
+    machineData?.contexto?.parada_ativa !== null ||
+    machineData?.contexto?.status === false ||
+    machineData?.status === false;
+  const baseTheme = isMachineStopped
+    ? {
+        panelBg: 'bg-red-900/40',
+        panelBorder: 'border-red-400/30',
+        headerBorder: 'border-red-400/50',
+        textColor: 'text-red-200',
+        producedColor: 'text-emerald-200',
+        rejectColor: 'text-red-200',
+        saldoColor: 'text-yellow-200',
+        badgeBg: 'bg-red-500/30',
+        badgeBorder: 'border-red-400/60'
+      }
+    : {
+        panelBg: 'bg-blue-800/40',
+        panelBorder: 'border-blue-400/30',
+        headerBorder: 'border-blue-400/50',
+        textColor: 'text-blue-200',
+        producedColor: 'text-green-400',
+        rejectColor: 'text-red-400',
+        saldoColor: 'text-orange-400',
+        badgeBg: 'bg-blue-400/30',
+        badgeBorder: 'border-blue-300/60'
+      };
+
   // Organizar estações em sequência numérica e dividir em 2 colunas automaticamente
   const { coluna1, coluna2, totalProduzido, totalRejeitos } = useMemo(() => {
     const allStations: StationData[] = [];
@@ -44,8 +71,13 @@ export function RotativasStationsView({
       const postoMatch = nome.match(/(?:posto|estacao|estação)\s+(\d+)/i);
       const postoNumero = postoMatch ? parseInt(postoMatch[1]) : production.machine.numero_estacao || 0;
       
-      // ✅ Extrair producao_mapa ANTES do switch (escopo global)
-      const producaoMapa = production.websocket_data?.producao_mapa;
+      // ✅ Extrair dados de produção (priorizar objetos normalizados em production.grade/produto)
+      const producaoMapa =
+        production.websocket_data?.producao_mapa && production.websocket_data.producao_mapa.id_mapa
+          ? production.websocket_data.producao_mapa
+          : null;
+      const gradeInfo = production.grade || null;
+      const produtoInfo = production.produto || null;
       
       // Extrair dados baseado no contexto ativo
       let produzido = 0;
@@ -90,10 +122,22 @@ export function RotativasStationsView({
       }
       
       // Extrair informações da produção alocada (tamanho, produto, cor)
-      const tamanho = producaoMapa?.talao_tamanho || null;
-      const produto = producaoMapa?.produto_referencia || producaoMapa?.talao_referencia || null;
-      const cor = producaoMapa?.descricao_cor || null;
-      const totalAProduzir = producaoMapa?.qt_produzir || 0; // ✅ NOVO
+      const tamanho = gradeInfo?.tamanho || producaoMapa?.talao_tamanho || null;
+      const produto =
+        produtoInfo?.referencia ||
+        producaoMapa?.produto_referencia ||
+        producaoMapa?.talao_referencia ||
+        null;
+      const cor =
+        produtoInfo?.cor ||
+        producaoMapa?.descricao_cor ||
+        produtoInfo?.descricao ||
+        null;
+      const totalAProduzir =
+        gradeInfo?.quantidade ||
+        producaoMapa?.qt_produzir ||
+        producaoMapa?.quantidade_total ||
+        0; // ✅ NOVO
       
       allStations.push({
         posto: postoNumero,
@@ -150,50 +194,58 @@ export function RotativasStationsView({
     }, [station.tamanho, station.produto, station.cor]);
     
     return (
-      <div className="border-b border-blue-400/20 hover:bg-blue-700/20 transition-colors">
+      <div
+        className={`border-b ${isMachineStopped ? 'border-red-400/30 hover:bg-red-800/20' : 'border-blue-400/20 hover:bg-blue-700/20'} transition-colors`}
+      >
         {/* Linha principal com números e botão */}
-        <div className="flex items-center gap-2 py-1.5">
+        <div className="flex flex-col sm:flex-row sm:items-center gap-2 py-1.5">
           {/* Número do posto */}
-          <div className="flex items-center justify-center w-10 h-10 rounded-full bg-blue-400/30 text-white font-bold text-lg shrink-0">
+          <div
+            className={`flex items-center justify-center w-9 h-9 rounded-full text-white font-bold text-base shrink-0 ${
+              isMachineStopped ? 'bg-red-500/30 border border-red-300/60' : 'bg-blue-400/30 border border-blue-300/60'
+            }`}
+          >
             {station.posto}
           </div>
           
           {/* Nome do posto/estação */}
-          <div className="flex-1 text-left min-w-[100px]">
+          <div className="flex-1 text-left min-w-[80px]">
             <div className="text-xs font-semibold text-white truncate" title={station.nome}>
               {station.nome}
             </div>
           </div>
           
           {/* Produzido */}
-          <div className="flex-1 text-center min-w-[60px]">
-            <div className="text-2xl font-bold text-green-400">
+          <div className="flex-1 text-center min-w-[50px]">
+            <div className={`text-xl font-bold ${baseTheme.producedColor}`}>
               {station.produzido}
             </div>
           </div>
           
           {/* Rejeitos */}
-          <div className="flex-1 text-center min-w-[60px]">
-            <div className="text-2xl font-bold text-red-400">
+          <div className="flex-1 text-center min-w-[50px]">
+            <div className={`text-xl font-bold ${baseTheme.rejectColor}`}>
               {station.rejeitos}
             </div>
           </div>
           
           {/* Saldo (apenas se contexto for talões) */}
           {showSaldo && (
-            <div className="flex-1 text-center min-w-[70px]">
-              <div className="text-2xl font-bold text-orange-400">
+            <div className="flex-1 text-center min-w-[55px]">
+              <div className={`text-xl font-bold ${baseTheme.saldoColor}`}>
                 {station.saldo}
               </div>
             </div>
           )}
           
           {/* Botão Adicionar Rejeito */}
-          <div className="shrink-0 ml-2">
+          <div className="w-full sm:w-auto sm:shrink-0 sm:ml-2">
             {hasValidId ? (
               <button
                 onClick={() => onAddReject?.(station.id_maquina)}
-                className="px-3 py-1.5 bg-red-600 hover:bg-red-500 text-white text-sm font-semibold rounded-lg transition-colors shadow-lg border border-red-400/30"
+                className={`w-full sm:w-auto px-2.5 py-1 ${
+                  isMachineStopped ? 'bg-red-700 hover:bg-red-600' : 'bg-red-600 hover:bg-red-500'
+                } text-white text-xs font-semibold rounded-lg transition-colors shadow-lg border border-red-400/30`}
                 title={`Adicionar rejeito - ${station.nome}`}
               >
                 + Rejeito
@@ -211,7 +263,9 @@ export function RotativasStationsView({
           <div className="pb-1 px-3 flex justify-center items-center gap-1">
             {/* Tamanho SOLTO com DESTAQUE */}
             {station.tamanho && (
-              <span className="text-white font-black text-sm">{station.tamanho}</span>
+              <span className={`font-black text-sm ${isMachineStopped ? 'text-white' : 'text-white'}`}>
+                {station.tamanho}
+              </span>
             )}
             {/* Separador */}
             {station.tamanho && station.produto && (
@@ -223,11 +277,24 @@ export function RotativasStationsView({
             )}
             {/* Cor */}
             {station.cor && (
-              <span className="text-blue-300/80 font-medium text-sm"> - {station.cor}</span>
+              <span
+                className={`font-medium text-sm ${
+                  isMachineStopped ? 'text-red-200' : 'text-blue-300/80'
+                }`}
+              >
+                {' '}
+                - {station.cor}
+              </span>
             )}
             {/* Total a Produzir */}
             {showSaldo && station.total_a_produzir > 0 && (
-              <span className="text-blue-400/80 font-medium text-sm ml-1">(Total: {station.total_a_produzir})</span>
+              <span
+                className={`font-medium text-sm ml-1 ${
+                  isMachineStopped ? 'text-red-200' : 'text-blue-400/80'
+                }`}
+              >
+                (Total: {station.total_a_produzir})
+              </span>
             )}
           </div>
         )}
@@ -238,10 +305,16 @@ export function RotativasStationsView({
   const showSaldoColumn = contextoAtivo === 'taloes';
   
   return (
-    <div className="flex flex-col h-full bg-gradient-to-br from-blue-900 via-blue-800 to-blue-900 p-6">
+    <div
+      className={`flex flex-col h-full p-6 ${
+        isMachineStopped
+          ? 'bg-gradient-to-br from-red-900 via-red-800 to-red-900'
+          : 'bg-gradient-to-br from-blue-900 via-blue-800 to-blue-900'
+      }`}
+    >
       
       {/* Totais Gerais */}
-      <div className="mb-6 bg-blue-800/40 backdrop-blur-sm rounded-xl p-6 border border-blue-400/30">
+      <div className={`mb-6 backdrop-blur-sm rounded-xl p-6 border ${baseTheme.panelBg} ${baseTheme.panelBorder}`}>
         <div className="text-center mb-4">
           <h2 className="text-4xl font-bold text-white mb-2">
             {machineData?.contexto?.nome || machineData?.nome || 'ROTATIVAS'}
@@ -270,30 +343,30 @@ export function RotativasStationsView({
         </div>
       </div>
       
-      {/* Grid de 2 Colunas Automáticas */}
-      <div className="flex-1 grid grid-cols-2 gap-6">
-        
-        {/* Coluna 1 */}
-        <div className="bg-blue-800/40 backdrop-blur-sm rounded-xl p-6 border border-blue-400/30">
+      {/* Grid responsiva */}
+      <div className="flex-1 w-full overflow-x-auto">
+        <div className="grid grid-cols-2 min-w-[680px] gap-4">
+          {/* Coluna 1 */}
+          <div className={`backdrop-blur-sm rounded-xl p-5 border ${baseTheme.panelBg} ${baseTheme.panelBorder}`}>
           {/* Header */}
-          <div className="mb-4 pb-3 border-b-2 border-blue-400/50">
+          <div className={`mb-3 pb-2 border-b ${baseTheme.headerBorder}`}>
             <div className="flex items-center gap-3 px-3">
               <div className="w-10 shrink-0"></div> {/* Espaço para número */}
-              <div className="flex-1 text-left text-sm font-semibold text-blue-200 min-w-[120px]">
+              <div className={`flex-1 text-left text-sm font-semibold ${baseTheme.textColor} min-w-[120px]`}>
                 Estação
               </div>
-              <div className="flex-1 text-center text-xs font-semibold text-blue-200 min-w-[60px]">
+              <div className={`flex-1 text-center text-xs font-semibold ${baseTheme.textColor} min-w-[60px]`}>
                 Produzido
               </div>
-              <div className="flex-1 text-center text-xs font-semibold text-blue-200 min-w-[60px]">
+              <div className={`flex-1 text-center text-xs font-semibold ${baseTheme.textColor} min-w-[60px]`}>
                 Rejeitos
               </div>
               {showSaldoColumn && (
                 <>
-                  <div className="flex-1 text-center text-xs font-semibold text-blue-200 min-w-[55px]">
+                  <div className={`flex-1 text-center text-xs font-semibold ${baseTheme.textColor} min-w-[55px]`}>
                     Total
                   </div>
-                  <div className="flex-1 text-center text-xs font-semibold text-blue-200 min-w-[55px]">
+                  <div className={`flex-1 text-center text-xs font-semibold ${baseTheme.textColor} min-w-[55px]`}>
                     Saldo
                   </div>
                 </>
@@ -321,26 +394,26 @@ export function RotativasStationsView({
         </div>
         
         {/* Coluna 2 */}
-        <div className="bg-blue-800/40 backdrop-blur-sm rounded-xl p-6 border border-blue-400/30">
+        <div className={`backdrop-blur-sm rounded-xl p-5 border ${baseTheme.panelBg} ${baseTheme.panelBorder}`}>
           {/* Header */}
-          <div className="mb-4 pb-3 border-b-2 border-blue-400/50">
+          <div className={`mb-3 pb-2 border-b ${baseTheme.headerBorder}`}>
             <div className="flex items-center gap-3 px-3">
               <div className="w-10 shrink-0"></div> {/* Espaço para número */}
-              <div className="flex-1 text-left text-sm font-semibold text-blue-200 min-w-[120px]">
+              <div className={`flex-1 text-left text-sm font-semibold ${baseTheme.textColor} min-w-[120px]`}>
                 Estação
               </div>
-              <div className="flex-1 text-center text-xs font-semibold text-blue-200 min-w-[60px]">
+              <div className={`flex-1 text-center text-xs font-semibold ${baseTheme.textColor} min-w-[60px]`}>
                 Produzido
               </div>
-              <div className="flex-1 text-center text-xs font-semibold text-blue-200 min-w-[60px]">
+              <div className={`flex-1 text-center text-xs font-semibold ${baseTheme.textColor} min-w-[60px]`}>
                 Rejeitos
               </div>
               {showSaldoColumn && (
                 <>
-                  <div className="flex-1 text-center text-xs font-semibold text-blue-200 min-w-[55px]">
+                  <div className={`flex-1 text-center text-xs font-semibold ${baseTheme.textColor} min-w-[55px]`}>
                     Total
                   </div>
-                  <div className="flex-1 text-center text-xs font-semibold text-blue-200 min-w-[55px]">
+                  <div className={`flex-1 text-center text-xs font-semibold ${baseTheme.textColor} min-w-[55px]`}>
                     Saldo
                   </div>
                 </>
@@ -366,7 +439,7 @@ export function RotativasStationsView({
             )}
           </div>
         </div>
-        
+        </div>
       </div>
     </div>
   );

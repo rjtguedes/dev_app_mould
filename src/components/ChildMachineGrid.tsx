@@ -251,10 +251,20 @@ export function ChildMachineGrid({
           
           {/* Produto */}
           <div className="text-center">
-            <div className="inline-flex items-center gap-1 px-2 py-1 bg-gray-700/50 rounded-md">
-              <span className="text-gray-300 text-xs">
+            <div className="inline-flex flex-col items-center gap-0.5 px-2 py-1 bg-gray-700/50 rounded-md min-w-[140px]">
+              <span className="text-gray-100 text-xs font-semibold">
                 {production.produto?.referencia || production.parameters.produto?.referencia || 'Sem produção'}
               </span>
+              {production.grade?.tamanho && (
+                <span className="text-blue-200 text-[11px] uppercase tracking-wide">
+                  Tam {production.grade.tamanho}
+                </span>
+              )}
+              {(production.produto?.cor || production.produto?.descricao || production.parameters.produto?.descricao) && (
+                <span className="text-gray-300 text-[11px]">
+                  {production.produto?.cor || production.produto?.descricao || production.parameters.produto?.descricao}
+                </span>
+              )}
             </div>
           </div>
           

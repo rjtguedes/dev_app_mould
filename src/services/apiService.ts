@@ -70,6 +70,20 @@ export interface TalaoProducaoRequest {
   tempo_ciclo_segundos?: number;
 }
 
+export interface TalaoProducaoSimplesRequest {
+  id_talao: number;
+  estacao_numero: number;
+  id_maquina_filha: number;
+  quantidade: number;
+  tempo_ciclo_segundos?: number;
+}
+
+export interface IniciarProducaoSimplesRequest {
+  id_maquina: number;
+  id_mapa: number;
+  taloes: TalaoProducaoSimplesRequest[];
+}
+
 export interface FinalizarTalaoRequest {
   id_maquina: number;
   id_talao: number;
@@ -302,7 +316,7 @@ class APIService {
     });
   }
 
-  async iniciarProducaoSimples(request: IniciarProducaoMapaRequest): Promise<APIResponse> {
+  async iniciarProducaoSimples(request: IniciarProducaoSimplesRequest): Promise<APIResponse> {
     return this.request('/api/producao/iniciar-simples', {
       method: 'POST',
       body: JSON.stringify(request)

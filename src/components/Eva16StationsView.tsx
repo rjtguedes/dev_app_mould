@@ -30,6 +30,10 @@ export function Eva16StationsView({
   contextoAtivo,
   onAddReject
 }: Eva16StationsViewProps) {
+  const isMachineStopped =
+    machineData?.contexto?.parada_ativa !== null ||
+    machineData?.contexto?.status === false ||
+    machineData?.status === false;
   
   // Separar e organizar estações por lado (ESQUERDA/DIREITA) e número do posto
   const { esquerda, direita, totalProduzido, totalRejeitos } = useMemo(() => {
@@ -184,41 +188,41 @@ export function Eva16StationsView({
     return (
       <div className="border-b border-blue-400/20 hover:bg-blue-700/20 transition-colors">
         {/* Linha principal com números e botão */}
-        <div className="flex items-center gap-2 py-1.5">
+        <div className="flex flex-col sm:flex-row sm:items-center gap-2 py-1.5">
           {/* Número do posto */}
-          <div className="flex items-center justify-center w-10 h-10 rounded-full bg-blue-400/30 text-white font-bold text-lg shrink-0">
+          <div className="flex items-center justify-center w-9 h-9 rounded-full bg-blue-400/30 text-white font-bold text-base shrink-0">
             {station.posto}
           </div>
           
           {/* Produzido */}
-          <div className="flex-1 text-center min-w-[80px]">
-            <div className="text-3xl font-bold text-green-400">
+          <div className="flex-1 text-center min-w-[60px]">
+            <div className="text-xl font-bold text-green-400">
               {station.produzido}
             </div>
           </div>
           
           {/* Rejeitos */}
-          <div className="flex-1 text-center min-w-[80px]">
-            <div className="text-3xl font-bold text-red-400">
+          <div className="flex-1 text-center min-w-[60px]">
+            <div className="text-xl font-bold text-red-400">
               {station.rejeitos}
             </div>
           </div>
           
           {/* Saldo (apenas se contexto for talões) */}
           {showSaldo && (
-            <div className="flex-1 text-center min-w-[80px]">
-              <div className="text-3xl font-bold text-orange-400">
+            <div className="flex-1 text-center min-w-[60px]">
+              <div className="text-xl font-bold text-orange-400">
                 {station.saldo}
               </div>
             </div>
           )}
           
           {/* Botão Adicionar Rejeito */}
-          <div className="shrink-0 ml-2">
+          <div className="w-full sm:w-auto sm:shrink-0 sm:ml-2">
             {hasValidId ? (
               <button
                 onClick={() => onAddReject?.(station.id_maquina)}
-                className="px-3 py-1.5 bg-red-600 hover:bg-red-500 text-white text-sm font-semibold rounded-lg transition-colors shadow-lg border border-red-400/30"
+                className="w-full sm:w-auto px-2.5 py-1 bg-red-600 hover:bg-red-500 text-white text-xs font-semibold rounded-lg transition-colors shadow-lg border border-red-400/30"
                 title={`Adicionar rejeito - ${station.nome}`}
               >
                 + Rejeito
@@ -263,10 +267,20 @@ export function Eva16StationsView({
   const showSaldoColumn = contextoAtivo === 'taloes';
   
   return (
-    <div className="flex flex-col h-full bg-gradient-to-br from-blue-900 via-blue-800 to-blue-900 p-6">
+    <div
+      className={`flex flex-col h-full p-6 ${
+        isMachineStopped
+          ? 'bg-gradient-to-br from-red-900 via-red-800 to-red-900'
+          : 'bg-gradient-to-br from-blue-900 via-blue-800 to-blue-900'
+      }`}
+    >
       
       {/* Totais Gerais */}
-      <div className="mb-6 bg-blue-800/40 backdrop-blur-sm rounded-xl p-6 border border-blue-400/30">
+      <div
+        className={`mb-6 backdrop-blur-sm rounded-xl p-6 border ${
+          isMachineStopped ? 'bg-red-900/40 border-red-400/30' : 'bg-blue-800/40 border-blue-400/30'
+        }`}
+      >
         <div className="text-center mb-4">
           <h2 className="text-4xl font-bold text-white mb-2">
             {machineData?.contexto?.nome || 'EVA2'}
@@ -292,13 +306,17 @@ export function Eva16StationsView({
         </div>
       </div>
       
-      {/* Grid de 2 Colunas: ESQUERDA | DIREITA */}
-      <div className="flex-1 grid grid-cols-2 gap-6">
-        
-        {/* Coluna ESQUERDA */}
-        <div className="bg-blue-800/40 backdrop-blur-sm rounded-xl p-6 border border-blue-400/30">
+      {/* Grid responsiva: ESQUERDA | DIREITA */}
+      <div className="flex-1 w-full overflow-x-auto">
+        <div className="grid grid-cols-2 min-w-[640px] gap-4">
+          {/* Coluna ESQUERDA */}
+          <div
+            className={`backdrop-blur-sm rounded-xl p-5 border ${
+              isMachineStopped ? 'bg-red-900/40 border-red-400/30' : 'bg-blue-800/40 border-blue-400/30'
+            }`}
+          >
           {/* Header */}
-          <div className="mb-4 pb-3 border-b-2 border-blue-400/50">
+          <div className="mb-3 pb-2 border-b border-blue-400/50">
             <h3 className="text-2xl font-bold text-center text-white mb-3">
               ESQUERDA
             </h3>
@@ -332,9 +350,13 @@ export function Eva16StationsView({
         </div>
         
         {/* Coluna DIREITA */}
-        <div className="bg-blue-800/40 backdrop-blur-sm rounded-xl p-6 border border-blue-400/30">
+          <div
+            className={`backdrop-blur-sm rounded-xl p-5 border ${
+              isMachineStopped ? 'bg-red-900/40 border-red-400/30' : 'bg-blue-800/40 border-blue-400/30'
+            }`}
+          >
           {/* Header */}
-          <div className="mb-4 pb-3 border-b-2 border-blue-400/50">
+          <div className="mb-3 pb-2 border-b border-blue-400/50">
             <h3 className="text-2xl font-bold text-center text-white mb-3">
               DIREITA
             </h3>
@@ -366,7 +388,7 @@ export function Eva16StationsView({
             ))}
           </div>
         </div>
-        
+        </div>
       </div>
     </div>
   );
