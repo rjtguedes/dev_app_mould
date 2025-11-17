@@ -24,24 +24,15 @@ export function SingleMachineViewNew({
   const [confirming, setConfirming] = useState<boolean>(false);
   const [confirmMessage, setConfirmMessage] = useState<string | null>(null);
 
-  if (!machineData) {
-    return (
-      <div className="overflow-x-auto bg-black/20 rounded-xl border border-white/30 shadow-xl backdrop-blur-sm">
-        <div className="p-8 text-center">
-          <Info className="w-12 h-12 text-white/70 mx-auto mb-4" />
-          <p className="text-lg font-semibold text-white">Sem dados de máquina</p>
-          <p className="text-sm text-white/80">Aguardando dados do SSE</p>
-        </div>
-      </div>
-    );
-  }
-
+  // ✅ CORRIGIDO: Mover todos os hooks ANTES do early return
+  // Isso garante que os hooks sejam sempre chamados na mesma ordem
   // ✅ USAR DADOS DIRETAMENTE DO BACKEND - SEM CÁLCULOS
   // O backend já envia tudo calculado, apenas exibimos o que vem
   
   // Estrutura do backend: pode vir com wrapper { success, data } ou com campo 'contexto'
   const unwrappedData = useMemo(() => {
-    if (machineData && typeof machineData === 'object' && 'success' in (machineData as any) && 'data' in (machineData as any)) {
+    if (!machineData) return null;
+    if (typeof machineData === 'object' && 'success' in (machineData as any) && 'data' in (machineData as any)) {
       return (machineData as any).data;
     }
     return machineData;
@@ -74,6 +65,19 @@ export function SingleMachineViewNew({
       rejeitos: src.rejeitos ?? 0
     };
   }, [sessao_operador_raw, estatisticas, producao_turno]);
+
+  // ✅ Early return DEPOIS de todos os hooks
+  if (!machineData) {
+    return (
+      <div className="overflow-x-auto bg-black/20 rounded-xl border border-white/30 shadow-xl backdrop-blur-sm">
+        <div className="p-8 text-center">
+          <Info className="w-12 h-12 text-white/70 mx-auto mb-4" />
+          <p className="text-lg font-semibold text-white">Sem dados de máquina</p>
+          <p className="text-sm text-white/80">Aguardando dados do SSE</p>
+        </div>
+      </div>
+    );
+  }
 
   // ✅ Selecionar contexto para exibir (usar fallbacks quando necessário)
   let dadosExibicao: any = null;
