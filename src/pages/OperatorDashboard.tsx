@@ -1153,16 +1153,36 @@ export function OperatorDashboard({
             }
           }
         }}
-        onJustifyStop={() => setShowJustifyModal(true)}
-        currentStopJustified={Boolean(localStopJustified || (machineData?.contexto as any)?.ultima_parada_justificada === true || (machineData?.contexto as any)?.ultima_parada?.justificada === true)}
+        onJustifyStop={() => {
+          // ✅ CORREÇÃO: Verificar se a parada já está justificada antes de abrir o modal
+          const ctx: any = machineData?.contexto || {};
+          const paradaAtivaJustificada = ctx.parada_ativa?.motivo_id !== null && ctx.parada_ativa?.motivo_id !== undefined;
+          const ultimaParadaJustificada = ctx.ultima_parada_justificada === true || ctx.ultima_parada?.justificada === true;
+          
+          if (paradaAtivaJustificada || ultimaParadaJustificada || localStopJustified) {
+            console.log('ℹ️ Parada já está justificada, não abrindo modal');
+            return;
+          }
+          
+          setShowJustifyModal(true);
+        }}
+        currentStopJustified={Boolean(
+          localStopJustified || 
+          (machineData?.contexto as any)?.ultima_parada_justificada === true || 
+          (machineData?.contexto as any)?.ultima_parada?.justificada === true ||
+          // ✅ CORREÇÃO: Verificar se parada_ativa tem motivo_id (indica que já foi justificada)
+          (machineData?.contexto?.parada_ativa?.motivo_id !== null && machineData?.contexto?.parada_ativa?.motivo_id !== undefined)
+        )}
         wsData={machineData}
         justifiedStopReason={(() => {
           const ctx: any = machineData?.contexto || {};
           const hasLatest = ctx.parada_ativa || ctx.ultima_parada;
-          const isJust = localStopJustified || ctx.ultima_parada_justificada === true || ctx.ultima_parada?.justificada === true;
+          // ✅ CORREÇÃO: Verificar se parada_ativa tem motivo_id (indica que já foi justificada)
+          const paradaAtivaJustificada = ctx.parada_ativa?.motivo_id !== null && ctx.parada_ativa?.motivo_id !== undefined;
+          const isJust = localStopJustified || ctx.ultima_parada_justificada === true || ctx.ultima_parada?.justificada === true || paradaAtivaJustificada;
           if (localStopJustified && localStopJustifiedReason) return localStopJustifiedReason;
           if (!hasLatest) return 'sem paradas para justificar';
-          return isJust ? (ctx.ultima_parada_motivo || 'Justificada') : 'Parada não justificada';
+          return isJust ? (ctx.ultima_parada_motivo || ctx.parada_ativa?.motivo_id || 'Justificada') : 'Parada não justificada';
         })()}
         onWsEndSession={() => console.log('🔚 Finalizar sessão - implementar')}
         onForcedStop={handleForcedStop}

@@ -494,7 +494,9 @@ export function Sidebar({
             const contexto: any = wsData?.contexto || null;
             const latestParada = contexto?.parada_ativa || contexto?.ultima_parada || null;
             const hasLatestParada = !!latestParada;
-            const isLatestJustified = !!currentStopJustified || (justifiedStopReason && justifiedStopReason !== 'Parada não justificada');
+            // ✅ CORREÇÃO: Verificar se parada_ativa tem motivo_id (indica que já foi justificada)
+            const paradaAtivaJustificada = contexto?.parada_ativa?.motivo_id !== null && contexto?.parada_ativa?.motivo_id !== undefined;
+            const isLatestJustified = !!currentStopJustified || paradaAtivaJustificada || (justifiedStopReason && justifiedStopReason !== 'Parada não justificada');
 
             if (hasLatestParada && !isLatestJustified) {
               // Mostrar botão para justificar (mesmo se a máquina estiver funcionando)
