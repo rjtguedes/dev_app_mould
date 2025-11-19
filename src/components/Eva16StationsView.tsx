@@ -66,20 +66,20 @@ export function Eva16StationsView({
       
       switch (contextoAtivo) {
         case 'sessao':
-          produzido = production.websocket_data?.sessao_operador?.sinais_validos || 
-                     production.websocket_data?.sessao_operador?.sinais || 
-                     production.stats?.produzido || 0;
-          rejeitos = production.websocket_data?.sessao_operador?.rejeitos || 
-                    production.stats?.rejeitos || 0;
+          // ✅ CORREÇÃO: Contexto sessão deve exibir dados de sessao_operador
+          // ❌ NÃO usar production.stats como fallback pois ele vem de producao_mapa
+          produzido = production.websocket_data?.sessao_operador?.sinais_validos ?? 
+                     production.websocket_data?.sessao_operador?.sinais ?? 0;
+          rejeitos = production.websocket_data?.sessao_operador?.rejeitos ?? 0;
           break;
         case 'turno':
-          produzido = production.websocket_data?.producao_turno?.sinais_validos || 
-                     production.websocket_data?.producao_turno?.sinais || 
-                     production.stats?.produzido || 0;
-          rejeitos = production.websocket_data?.producao_turno?.rejeitos || 
-                    production.stats?.rejeitos || 0;
+          // ✅ CORREÇÃO: Contexto turno deve exibir dados de producao_turno
+          produzido = production.websocket_data?.producao_turno?.sinais_validos ?? 
+                     production.websocket_data?.producao_turno?.sinais ?? 0;
+          rejeitos = production.websocket_data?.producao_turno?.rejeitos ?? 0;
           break;
         case 'taloes':
+          // ✅ CORREÇÃO: Contexto taloes (produção) deve exibir dados de producao_mapa
           // ✅ CORREÇÃO: Só usar dados se tiver produção ativa (id_mapa não null)
           const temProducaoAtiva = producaoMapa?.id_mapa !== null && producaoMapa?.id_mapa !== undefined;
           

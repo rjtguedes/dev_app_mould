@@ -308,12 +308,15 @@ export function OperatorDashboard({
         : 0;
 
       // Selecionar dados baseado no contexto ativo
+      // ✅ CORREÇÃO: Contexto 'sessao' deve exibir dados de sessao_operador
+      // ✅ CORREÇÃO: Contexto 'taloes' (produção) deve exibir dados de producao_mapa
       let displayData = { sinais: 0, rejeitos: 0, sinais_validos: 0 };
       
       // ✅ Log reduzido: Removido log repetitivo de cada estação
       
       switch (contextoAtivo) {
         case 'sessao':
+          // ✅ Contexto sessão: exibir dados de sessao_operador
           displayData = {
             sinais: childData.sessao_operador?.sinais || 0,
             sinais_validos: childData.sessao_operador?.sinais_validos || 0,
@@ -328,6 +331,7 @@ export function OperatorDashboard({
           };
           break;
         case 'taloes':
+          // ✅ Contexto taloes (produção): exibir dados de producao_mapa
           displayData = {
             sinais: childData.producao_mapa?.sinais || 0,
             sinais_validos: childData.producao_mapa?.sinais_validos || childData.producao_mapa?.sinais || 0,

@@ -80,16 +80,20 @@ export function SingleMachineViewNew({
   }
 
   // ✅ Selecionar contexto para exibir (usar fallbacks quando necessário)
+  // ✅ CORREÇÃO: Contexto 'sessao' deve exibir dados de sessao_operador
+  // ✅ CORREÇÃO: Contexto 'taloes' (produção) deve exibir dados de producao_mapa
   let dadosExibicao: any = null;
 
   switch (contextoAtivo) {
     case 'sessao':
+      // ✅ Contexto sessão: exibir dados de sessao_operador
       dadosExibicao = sessao_operador || estatisticas || producao_turno;
       break;
     case 'turno':
       dadosExibicao = producao_turno;
       break;
     case 'taloes':
+      // ✅ Contexto taloes (produção): exibir dados de producao_mapa
       dadosExibicao = producao_mapa;
       break;
   }
