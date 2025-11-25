@@ -5,6 +5,7 @@ import path from 'path';
 import { copyFileSync, existsSync } from 'fs';
 
 // Plugin para copiar settings.json.example para dist após o build
+// IMPORTANTE: Só copia se o arquivo não existir (preserva configurações do cliente)
 function copySettingsPlugin(): Plugin {
   return {
     name: 'copy-settings',
@@ -12,10 +13,17 @@ function copySettingsPlugin(): Plugin {
       const examplePath = path.resolve(__dirname, 'settings.json.example');
       const distPath = path.resolve(__dirname, 'dist', 'settings.json');
       
+      // Se o settings.json já existe, não sobrescrever (preserva configurações do cliente)
+      if (existsSync(distPath)) {
+        console.log('ℹ️ settings.json já existe - mantendo configurações do cliente');
+        return;
+      }
+      
+      // Só copia se não existir (primeira vez)
       if (existsSync(examplePath)) {
         try {
           copyFileSync(examplePath, distPath);
-          console.log('✅ settings.json.example copiado para dist/settings.json');
+          console.log('✅ settings.json.example copiado para dist/settings.json (primeira vez)');
         } catch (error) {
           console.error('❌ Erro ao copiar settings.json.example:', error);
         }

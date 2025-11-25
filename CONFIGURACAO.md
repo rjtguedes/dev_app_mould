@@ -72,6 +72,20 @@ O build copiará automaticamente o `settings.json.example` (já configurado) par
   - Editar apenas localmente antes do build (não commitar)
   - Ou usar a Opção 2 abaixo
 
+### 🔄 Builds Subsequentes
+
+**✅ IMPORTANTE**: O build é inteligente e **NÃO sobrescreve** o `settings.json` existente!
+
+- **Primeira vez**: Copia o `settings.json.example` para `dist/settings.json`
+- **Próximas vezes**: Mantém o `settings.json` existente (preserva suas configurações)
+- **Resultado**: Você só precisa configurar uma vez! 🎉
+
+Se você precisar resetar para os valores padrão, simplesmente delete o arquivo:
+```bash
+rm dist/settings.json
+# Próximo build copiará o exemplo novamente
+```
+
 ### Opção 2: Configurar DEPOIS do Build
 
 **✅ Vantagem**: Mantém o `settings.json.example` como template genérico no Git.
