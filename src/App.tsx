@@ -13,6 +13,7 @@ import { useWakeLock } from './hooks/useWakeLock';
 import { useAuth } from './hooks/useAuth';
 import { machineStorage } from './lib/machineStorage';
 import type { Machine } from './types/machine';
+import { getCompanyName } from './config/appSettings';
 
 function App() {
   const [pin, setPin] = useState<string>('');
@@ -419,7 +420,7 @@ function App() {
           }`}
           onClick={handleLogoClick}
         >
-          Operador - Mould
+          Operador - {getCompanyName()}
         </h1>
         
         {/* ✅ NOVO: Indicador visual de toques */}

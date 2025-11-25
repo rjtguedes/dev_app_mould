@@ -1,7 +1,30 @@
-import { defineConfig } from 'vite';
+import { defineConfig, Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
 import path from 'path';
+import { copyFileSync, existsSync } from 'fs';
+
+// Plugin para copiar settings.json.example para dist após o build
+function copySettingsPlugin(): Plugin {
+  return {
+    name: 'copy-settings',
+    closeBundle() {
+      const examplePath = path.resolve(__dirname, 'settings.json.example');
+      const distPath = path.resolve(__dirname, 'dist', 'settings.json');
+      
+      if (existsSync(examplePath)) {
+        try {
+          copyFileSync(examplePath, distPath);
+          console.log('✅ settings.json.example copiado para dist/settings.json');
+        } catch (error) {
+          console.error('❌ Erro ao copiar settings.json.example:', error);
+        }
+      } else {
+        console.warn('⚠️ settings.json.example não encontrado');
+      }
+    },
+  };
+}
 
 export default defineConfig({
   server: {
@@ -11,13 +34,16 @@ export default defineConfig({
   },
   plugins: [
     react(),
+    copySettingsPlugin(),
     VitePWA({
       registerType: 'autoUpdate',
       injectRegister: null,
       strategies: 'generateSW',
       includeAssets: [],
       manifest: {
-        name: 'Industrack - Operador Mould',
+        // Nota: O nome da empresa pode ser configurado em settings.json
+        // Este valor será atualizado dinamicamente no runtime via appSettings
+        name: 'Industrack - Operador',
         short_name: 'Industrack',
         description: 'Sistema de controle de produção Industrack',
         theme_color: '#1e40af',

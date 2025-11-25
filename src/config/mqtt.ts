@@ -1,11 +1,19 @@
-// Configurações do MQTT para o sistema IHM Mould
+// Configurações do MQTT para o sistema IHM
+import { getCompanyName } from './appSettings';
+
+// Função para gerar client ID com nome da empresa configurável
+const getCompanyPrefix = () => {
+  const companyName = getCompanyName().toLowerCase().replace(/\s+/g, '_');
+  return `ihm_${companyName}`;
+};
+
 export const MQTT_CONFIG = {
   // Configurações do broker
   broker: {
     host: (import.meta.env.VITE_MQTT_HOST as string) || 'localhost',
     port: parseInt((import.meta.env.VITE_MQTT_PORT as string) || '9001'),
     protocol: 'ws' as const,
-    clientId: `ihm_mould_${Math.random().toString(16).substr(2, 8)}`,
+    clientId: `${getCompanyPrefix()}_${Math.random().toString(16).substr(2, 8)}`,
     clean: true,
     reconnectPeriod: 5000,
     connectTimeout: 30 * 1000,
@@ -135,6 +143,6 @@ export const validateMQTTCommand = (command: any): boolean => {
 export const generateClientId = (): string => {
   const timestamp = Date.now().toString(36);
   const random = Math.random().toString(36).substr(2, 5);
-  return `ihm_mould_${timestamp}_${random}`;
+  return `${getCompanyPrefix()}_${timestamp}_${random}`;
 };
 

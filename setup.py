@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Setup script para o Criador de Operadores Completos - Sistema Mould
+Setup script para o Criador de Operadores Completos - Sistema IHM
 Instala automaticamente todas as dependências necessárias
 """
 
@@ -29,7 +29,7 @@ def check_python_version():
     return True
 
 def main():
-    print("🏭 Criador de Operadores Completos - Sistema Mould")
+    print("🏭 Criador de Operadores Completos - Sistema IHM")
     print("=" * 60)
     print("Instalando dependências...\n")
     

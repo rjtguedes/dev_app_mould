@@ -1,23 +1,38 @@
 // ⚙️ Configuração SSE (Server-Sent Events)
 
+import { getApiBaseUrl, loadSettings } from './appSettings';
+
 export interface SSEConfig {
   baseUrl: string;
   reconnectInterval: number;
   heartbeatTimeout: number;
 }
 
-export const SSE_CONFIG: SSEConfig = {
-  baseUrl: 'http://10.200.0.184:8000',
+// Configuração dinâmica - baseUrl será atualizado quando as configurações forem carregadas
+export let SSE_CONFIG: SSEConfig = {
+  baseUrl: getApiBaseUrl(), // Usa configuração dinâmica
   reconnectInterval: 5000,
   heartbeatTimeout: 60000
 };
 
+// Atualizar baseUrl quando as configurações forem carregadas
+loadSettings().then(settings => {
+  SSE_CONFIG.baseUrl = settings.apiBaseUrl;
+  console.log('✅ SSE_CONFIG atualizado com baseUrl:', SSE_CONFIG.baseUrl);
+}).catch(err => {
+  console.error('❌ Erro ao atualizar SSE_CONFIG:', err);
+});
+
 export function getSSEUrl(machineId: number): string {
-  return `${SSE_CONFIG.baseUrl}/api/sse/updates/${machineId}`;
+  // Sempre usar a configuração mais recente
+  const baseUrl = getApiBaseUrl();
+  return `${baseUrl}/api/sse/updates/${machineId}`;
 }
 
 export function getAPIUrl(endpoint: string): string {
-  return `${SSE_CONFIG.baseUrl}${endpoint}`;
+  // Sempre usar a configuração mais recente
+  const baseUrl = getApiBaseUrl();
+  return `${baseUrl}${endpoint}`;
 }
 
 // URLs dos endpoints
