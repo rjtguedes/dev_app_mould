@@ -8,13 +8,15 @@ O app utiliza um arquivo `settings.json` na raiz do projeto para configurações
 
 ### ⚠️ IMPORTANTE - Controle de Versão
 
-- **`settings.json`** - NÃO deve ser commitado no Git (está no `.gitignore`)
+- **`settings.json`** - NÃO é commitado no Git (está no `.gitignore`)
   - Cada instalação/cliente deve ter seu próprio arquivo local
   - As configurações são específicas de cada ambiente
   
-- **`settings.json.example`** - PODE ser commitado (é apenas um template)
-  - Serve como referência para criar o arquivo real
-  - Não contém configurações sensíveis ou específicas
+- **`settings.json.example`** - NÃO é commitado (está no `.gitignore`)
+  - Cada desenvolvedor/cliente pode ter seu próprio template local
+  - **Vantagem**: Não há conflitos ao fazer `git pull` - suas configurações locais são preservadas
+  - Serve como template para criar o `settings.json` no build
+  - **Primeira vez**: Se você não tiver o arquivo, crie baseado no exemplo abaixo
 
 ### Localização
 
@@ -66,24 +68,29 @@ O build copiará automaticamente o `settings.json.example` (já configurado) par
 
 3. **Copiar a pasta `dist`** para a VM do cliente.
 
-**⚠️ ATENÇÃO**: 
-- Se você editar `settings.json.example` e fizer commit, o template será alterado para todos
-- Para evitar isso, você pode:
-  - Editar apenas localmente antes do build (não commitar)
-  - Ou usar a Opção 2 abaixo
+**✅ Vantagem desta abordagem**: 
+- O `settings.json.example` está no `.gitignore`, então cada desenvolvedor/cliente mantém seu próprio template
+- Não há conflitos ao fazer `git pull` - suas configurações locais são preservadas
+- Você pode configurar uma vez e esquecer
 
 ### 🔄 Builds Subsequentes
 
-**✅ IMPORTANTE**: O build é inteligente e **NÃO sobrescreve** o `settings.json` existente!
+**✅ IMPORTANTE**: O build preserva automaticamente o `settings.json` configurado!
 
-- **Primeira vez**: Copia o `settings.json.example` para `dist/settings.json`
-- **Próximas vezes**: Mantém o `settings.json` existente (preserva suas configurações)
-- **Resultado**: Você só precisa configurar uma vez! 🎉
+**Como funciona:**
+1. **Antes do build**: O plugin salva o `settings.json` existente
+2. **Durante o build**: O Vite limpa a pasta `dist` (normal)
+3. **Após o build**: O plugin restaura o `settings.json` salvo
 
-Se você precisar resetar para os valores padrão, simplesmente delete o arquivo:
+**Resultado**: 
+- ✅ Você configura o `settings.json` **UMA VEZ**
+- ✅ Todos os builds subsequentes **preservam** suas configurações
+- ✅ Não precisa reconfigurar a cada atualização! 🎉
+
+**Se você precisar resetar para os valores padrão:**
 ```bash
 rm dist/settings.json
-# Próximo build copiará o exemplo novamente
+# Próximo build copiará o settings.json.example novamente
 ```
 
 ### Opção 2: Configurar DEPOIS do Build

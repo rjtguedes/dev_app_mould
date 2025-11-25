@@ -14,6 +14,7 @@ dist-ssr
 
 # Configurações locais (não commitar - cada instalação tem seu próprio)
 settings.json
+settings.json.example
 
 # Editor directories and files
 .vscode/*

@@ -2,26 +2,54 @@ import { defineConfig, Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
 import path from 'path';
-import { copyFileSync, existsSync } from 'fs';
+import { copyFileSync, existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs';
 
-// Plugin para copiar settings.json.example para dist após o build
-// IMPORTANTE: Só copia se o arquivo não existir (preserva configurações do cliente)
+// Plugin para preservar settings.json durante o build
+// Salva o arquivo antes do build e restaura depois (ou copia o exemplo se não existir)
 function copySettingsPlugin(): Plugin {
+  let savedSettings: string | null = null;
+  const distPath = path.resolve(__dirname, 'dist', 'settings.json');
+  const tempPath = path.resolve(__dirname, 'dist', '.settings.json.tmp');
+  const examplePath = path.resolve(__dirname, 'settings.json.example');
+
   return {
     name: 'copy-settings',
-    closeBundle() {
-      const examplePath = path.resolve(__dirname, 'settings.json.example');
-      const distPath = path.resolve(__dirname, 'dist', 'settings.json');
-      
-      // Se o settings.json já existe, não sobrescrever (preserva configurações do cliente)
+    // Hook ANTES do build - salva o settings.json se existir
+    buildStart() {
       if (existsSync(distPath)) {
-        console.log('ℹ️ settings.json já existe - mantendo configurações do cliente');
-        return;
+        try {
+          savedSettings = readFileSync(distPath, 'utf-8');
+          console.log('💾 settings.json salvo - será restaurado após o build');
+        } catch (error) {
+          console.warn('⚠️ Erro ao salvar settings.json:', error);
+        }
+      }
+    },
+    // Hook DEPOIS do build - restaura ou copia o exemplo
+    closeBundle() {
+      // Se tinha um settings.json salvo, restaura ele
+      if (savedSettings) {
+        try {
+          // Garantir que a pasta dist existe
+          const distDir = path.dirname(distPath);
+          if (!existsSync(distDir)) {
+            mkdirSync(distDir, { recursive: true });
+          }
+          writeFileSync(distPath, savedSettings, 'utf-8');
+          console.log('✅ settings.json restaurado com configurações do cliente');
+          return;
+        } catch (error) {
+          console.error('❌ Erro ao restaurar settings.json:', error);
+        }
       }
       
-      // Só copia se não existir (primeira vez)
+      // Se não tinha settings.json salvo, copia o exemplo (primeira vez)
       if (existsSync(examplePath)) {
         try {
+          const distDir = path.dirname(distPath);
+          if (!existsSync(distDir)) {
+            mkdirSync(distDir, { recursive: true });
+          }
           copyFileSync(examplePath, distPath);
           console.log('✅ settings.json.example copiado para dist/settings.json (primeira vez)');
         } catch (error) {
