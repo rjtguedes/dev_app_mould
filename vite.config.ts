@@ -123,11 +123,21 @@ export default defineConfig({
       },
       workbox: {
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
+        // ✅ Excluir settings.json do cache - sempre buscar versão mais recente
+        globIgnores: ['**/settings.json'],
         runtimeCaching: [{
           urlPattern: new RegExp('/*'),
           handler: 'StaleWhileRevalidate',
           options: {
             cacheName: 'app-cache'
+          }
+        }, {
+          // ✅ Configuração especial para settings.json - sempre buscar do servidor
+          urlPattern: new RegExp('/settings\\.json$'),
+          handler: 'NetworkFirst',
+          options: {
+            cacheName: 'settings-cache',
+            networkTimeoutSeconds: 3
           }
         }]
       }

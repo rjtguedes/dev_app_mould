@@ -1,6 +1,6 @@
 // ⚙️ Configuração SSE (Server-Sent Events)
 
-import { getApiBaseUrl, loadSettings } from './appSettings';
+import { getApiBaseUrl, getApiBaseUrlAsync, loadSettings } from './appSettings';
 
 export interface SSEConfig {
   baseUrl: string;
