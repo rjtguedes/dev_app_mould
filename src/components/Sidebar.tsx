@@ -45,6 +45,10 @@ interface SidebarProps {
   onForcedStop?: () => void;
   // ✅ NOVO: Justificar parada (ativa ou última)
   onJustifyStop?: () => void;
+  // ✅ NOVO: Pré-justificar parada
+  onPreJustify?: () => void;
+  preSelectedReasonId?: number | null;
+  onClearPreJustify?: () => void;
 }
 
 interface MachineStats {
@@ -89,7 +93,9 @@ export function Sidebar({
   wsData,
   onWsEndSession,
   onForcedStop, // ✅ NOVO
-  onJustifyStop
+  onJustifyStop,
+  onPreJustify, // ✅ NOVO
+  preSelectedReasonId // ✅ NOVO
 }: SidebarProps) {
   const [isCollapsed, setIsCollapsed] = React.useState(false);
   const [showLogoutModal, setShowLogoutModal] = React.useState(false);
@@ -539,20 +545,44 @@ export function Sidebar({
               );
             }
 
-            // Sem paradas para justificar
+            // Sem paradas para justificar - mostrar botão de pré-justificar
             return (
-              <div
-                className={`
-                  w-full flex items-center gap-3 px-3 py-2.5 rounded-lg
-                  bg-white/5 text-white/70 border border-white/10
-                  ${isCollapsed ? 'justify-center' : 'justify-start'}
-                `}
-              >
-                <PauseCircle className="w-7 h-7" />
-                <span className={`transition-opacity duration-300 ${isCollapsed ? 'opacity-0 w-0' : 'opacity-100'}`}>
-                  sem paradas para justificar
-                </span>
-              </div>
+              <>
+                {preSelectedReasonId ? (
+                  // Motivo pré-selecionado ativo - estilo consistente com botão "Justificada"
+                  <div
+                    className={`
+                      w-full flex items-center gap-3 px-3 py-2.5 rounded-lg
+                      bg-yellow-600/20 text-yellow-300 border border-yellow-400/40
+                      ${isCollapsed ? 'justify-center' : 'justify-start'}
+                    `}
+                  >
+                    <AlertTriangle className="w-7 h-7" />
+                    <span className={`transition-opacity duration-300 ${isCollapsed ? 'opacity-0 w-0' : 'opacity-100'}`}>
+                      Pré-justificado
+                    </span>
+                  </div>
+                ) : (
+                  // Botão para pré-justificar
+                  onPreJustify && (
+                    <button
+                      onClick={onPreJustify}
+                      className={`
+                        w-full flex items-center gap-3 px-3 py-2.5 rounded-lg
+                        bg-blue-600 hover:bg-blue-700 text-white transition-colors
+                        border border-blue-400/50 shadow-lg shadow-blue-900/30
+                        focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-300
+                        ${isCollapsed ? 'justify-center' : 'justify-start'}
+                      `}
+                    >
+                      <AlertTriangle className="w-7 h-7" />
+                      <span className={`transition-opacity duration-300 ${isCollapsed ? 'opacity-0 w-0' : 'opacity-100'}`}>
+                        Pré Justificar
+                      </span>
+                    </button>
+                  )
+                )}
+              </>
             );
           })()}
 

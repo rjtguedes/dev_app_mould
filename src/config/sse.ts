@@ -18,9 +18,15 @@ export let SSE_CONFIG: SSEConfig = {
 // Atualizar baseUrl quando as configurações forem carregadas
 loadSettings().then(settings => {
   SSE_CONFIG.baseUrl = settings.apiBaseUrl;
-  console.log('✅ SSE_CONFIG atualizado com baseUrl:', SSE_CONFIG.baseUrl);
+  console.log('✅ SSE_CONFIG atualizado com baseUrl do settings.json:', SSE_CONFIG.baseUrl);
+  console.log('📋 Configurações completas:', {
+    apiBaseUrl: settings.apiBaseUrl,
+    companyName: settings.companyName,
+    origem: 'settings.json'
+  });
 }).catch(err => {
   console.error('❌ Erro ao atualizar SSE_CONFIG:', err);
+  console.warn('⚠️ SSE_CONFIG usando valor padrão:', SSE_CONFIG.baseUrl);
 });
 
 export function getSSEUrl(machineId: number): string {
@@ -36,6 +42,12 @@ export async function getSSEUrlAsync(machineId: number): Promise<string> {
   const baseUrl = await getApiBaseUrlAsync();
   const url = `${baseUrl}/api/sse/updates/${machineId}`;
   console.log('🔗 getSSEUrlAsync() gerado:', url);
+  console.log('📋 Detalhes da URL SSE:', {
+    baseUrl,
+    machineId,
+    urlCompleta: url,
+    origem: 'settings.json via getApiBaseUrlAsync()'
+  });
   return url;
 }
 

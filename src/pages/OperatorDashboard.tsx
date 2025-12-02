@@ -75,6 +75,11 @@ export function OperatorDashboard({
   const [showErrorModal, setShowErrorModal] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string>('');
   const [showSuccessToast, setShowSuccessToast] = useState(false);
+  const [successToastMessage, setSuccessToastMessage] = useState<string>('');
+
+  // ✅ NOVO: Estados para pré-justificação de paradas
+  const [showPreJustifyModal, setShowPreJustifyModal] = useState(false);
+  const [preSelectedReasonId, setPreSelectedReasonId] = useState<number | null>(null);
 
   // 🔊 Sons
   const { playAlert, playStop, playResume, playError, playSuccess } = useSounds();
@@ -112,6 +117,44 @@ export function OperatorDashboard({
       setCurrentLayout(defaultLayout);
     }
   }, [machine.id_maquina, machine.nome]);
+
+  // ✅ NOVO: Carregar motivo pré-selecionado do localStorage
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(`pre_justify_reason_${machine.id_maquina}`);
+      if (saved) {
+        const reasonId = parseInt(saved, 10);
+        if (!isNaN(reasonId)) {
+          setPreSelectedReasonId(reasonId);
+          console.log('✅ Motivo pré-selecionado carregado:', reasonId);
+        }
+      }
+    } catch (error) {
+      console.warn('⚠️ Erro ao carregar motivo pré-selecionado:', error);
+    }
+  }, [machine.id_maquina]);
+
+  // ✅ NOVO: Função para salvar motivo pré-selecionado
+  const savePreSelectedReason = useCallback((reasonId: number) => {
+    try {
+      localStorage.setItem(`pre_justify_reason_${machine.id_maquina}`, String(reasonId));
+      setPreSelectedReasonId(reasonId);
+      console.log('✅ Motivo pré-selecionado salvo:', reasonId);
+    } catch (error) {
+      console.error('❌ Erro ao salvar motivo pré-selecionado:', error);
+    }
+  }, [machine.id_maquina]);
+
+  // ✅ NOVO: Função para limpar motivo pré-selecionado
+  const clearPreSelectedReason = useCallback(() => {
+    try {
+      localStorage.removeItem(`pre_justify_reason_${machine.id_maquina}`);
+      setPreSelectedReasonId(null);
+      console.log('✅ Motivo pré-selecionado removido');
+    } catch (error) {
+      console.error('❌ Erro ao remover motivo pré-selecionado:', error);
+    }
+  }, [machine.id_maquina]);
   
   // ✅ NOVO: Handler para mudança de layout
   const handleLayoutChange = (newLayout: LayoutType) => {
@@ -656,6 +699,50 @@ export function OperatorDashboard({
     }
 
     if (temParadaNaoJustificada && paradaId) {
+      // ✅ NOVO: Verificar se há motivo pré-selecionado
+      if (preSelectedReasonId) {
+        console.log('🛑 Parada não justificada detectada - usando motivo pré-selecionado:', preSelectedReasonId);
+        
+        // Marcar esta parada como processada
+        lastProcessedStopRef.current = { id: paradaId, tipo: paradaTipo! };
+        
+        // Justificar automaticamente com motivo pré-selecionado
+        const justifyWithPreSelected = async () => {
+          try {
+            const paradaId = paradaAtiva?.id || ultimaParada?.id;
+            if (!paradaId) {
+              console.error('❌ Não há parada para justificar');
+              return;
+            }
+
+            console.log('🔄 Justificando automaticamente com motivo pré-selecionado:', preSelectedReasonId);
+            
+            // Chamar API diretamente (sem abrir modal)
+            const response = await apiService.justificarParada(paradaId, preSelectedReasonId);
+            
+            if (response.success) {
+              console.log('✅ Parada justificada automaticamente com motivo pré-selecionado');
+              setLocalStopJustified(true);
+              setLocalStopJustifiedReason('Justificada (pré-selecionado)');
+              // Limpar motivo pré-selecionado após usar
+              clearPreSelectedReason();
+              // Atualizar contexto
+              await consultarContexto();
+            } else {
+              throw new Error(response.error || 'Erro ao justificar parada');
+            }
+          } catch (error) {
+            console.error('❌ Erro ao justificar com motivo pré-selecionado:', error);
+            // Se houver erro, abrir modal para o usuário escolher manualmente
+            setIsManualStop(!!paradaAtiva && !paradaAtivaJustificada);
+            setShowJustifyModal(true);
+          }
+        };
+        
+        justifyWithPreSelected();
+        return;
+      }
+      
       console.log('🛑 Parada não justificada detectada - abrindo modal automaticamente');
       
       // Marcar esta parada como processada
@@ -689,7 +776,7 @@ export function OperatorDashboard({
       
       loadStopReasonsAndOpen();
     }
-  }, [machineData?.contexto, showJustifyModal, isLoading, loadingStopReasons, stopReasons.length, localStopJustified, machine.id_maquina]);
+  }, [machineData?.contexto, showJustifyModal, isLoading, loadingStopReasons, stopReasons.length, localStopJustified, machine.id_maquina, preSelectedReasonId, clearPreSelectedReason, consultarContexto]);
 
   // Verificar modo admin
   useEffect(() => {
@@ -1053,6 +1140,27 @@ export function OperatorDashboard({
     fetchStopReasons();
   }, []);
 
+  // ✅ NOVO: Handler para pré-justificar parada (salvar motivo no localStorage)
+  const handlePreJustify = useCallback(async (reasonId: number) => {
+    savePreSelectedReason(reasonId);
+    setShowPreJustifyModal(false);
+    
+    // Buscar descrição do motivo para exibir no toast
+    const motivo = stopReasons.find(r => r.id === reasonId);
+    const motivoDesc = motivo?.descricao || 'Motivo pré-selecionado';
+    
+    setSuccessToastMessage(`Motivo pré-selecionado: ${motivoDesc}`);
+    setShowSuccessToast(true);
+    playSuccess();
+    
+    console.log('✅ Motivo pré-selecionado salvo:', motivoDesc);
+    
+    // Esconder toast após 3 segundos
+    setTimeout(() => {
+      setShowSuccessToast(false);
+    }, 3000);
+  }, [savePreSelectedReason, stopReasons]);
+
   // Handler para justificar parada (usa parada atual ou última parada)
   // ✅ MELHORADO: Fecha modal imediatamente e mostra confirmação, processa resposta em background
   const handleJustifyStop = async (reasonId: number) => {
@@ -1071,6 +1179,7 @@ export function OperatorDashboard({
     console.log('🔄 Justificando parada (feedback imediato):', { idParada: paradaId, idMotivo: reasonId });
     setShowJustifyModal(false);
     setIsManualStop(false);
+    setSuccessToastMessage('Parada justificada com sucesso!');
     setShowSuccessToast(true);
     playSuccess();
     
@@ -1161,6 +1270,7 @@ export function OperatorDashboard({
     console.log('🛑 Confirmando parada forçada (feedback imediato):', reasonId);
     setShowJustifyModal(false);
     setIsManualStop(false);
+    setSuccessToastMessage('Parada forçada iniciada com sucesso!');
     setShowSuccessToast(true);
     playStop();
     playSuccess();
@@ -1296,6 +1406,11 @@ export function OperatorDashboard({
           
           setShowJustifyModal(true);
         }}
+        onPreJustify={() => {
+          // ✅ NOVO: Abrir modal de pré-justificação
+          setShowPreJustifyModal(true);
+        }}
+        preSelectedReasonId={preSelectedReasonId}
         currentStopJustified={Boolean(
           localStopJustified || 
           (machineData?.contexto as any)?.ultima_parada_justificada === true || 
@@ -1567,6 +1682,20 @@ export function OperatorDashboard({
           machineGroup={null} // TODO: Buscar grupo da máquina se necessário
           isManualStop={isManualStop}
         />
+
+        {/* ✅ NOVO: Modal de Pré-Justificação de Paradas */}
+        <JustifyStopModal
+          isOpen={showPreJustifyModal}
+          onClose={() => {
+            setShowPreJustifyModal(false);
+          }}
+          onJustify={async (reasonId: number) => {
+            await handlePreJustify(reasonId);
+          }}
+          stopReasons={stopReasons}
+          machineGroup={null}
+          isPreJustificationMode={true}
+        />
         
         {/* ✅ NOVO: Modal de Configuração de Layout */}
         <LayoutConfigModal
@@ -1626,11 +1755,15 @@ export function OperatorDashboard({
 
         {/* ✅ NOVO: Toast de Sucesso para justificação de paradas */}
         {showSuccessToast && (
-          <div className="fixed top-4 right-4 z-50 bg-green-500 text-white px-6 py-4 rounded-lg shadow-lg flex items-center gap-3 animate-slide-in-right">
-            <CheckCircle2 className="w-6 h-6" />
+          <div className="fixed top-4 right-4 z-50 bg-green-500 text-white px-6 py-4 rounded-lg shadow-lg flex items-center gap-3 animate-slide-in-right max-w-md">
+            <CheckCircle2 className="w-6 h-6 flex-shrink-0" />
             <div>
-              <p className="font-semibold">Parada justificada com sucesso!</p>
-              <p className="text-sm text-green-100">A confirmação será processada em background.</p>
+              <p className="font-semibold">{successToastMessage}</p>
+              {successToastMessage.includes('pré-selecionado') ? (
+                <p className="text-sm text-green-100">A próxima parada será justificada automaticamente.</p>
+              ) : (
+                <p className="text-sm text-green-100">A confirmação será processada em background.</p>
+              )}
             </div>
           </div>
         )}

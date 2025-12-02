@@ -72,9 +72,15 @@ export function useSSEConnection(options: SSEConnectionOptions) {
     try {
       // ✅ NOVO: Garantir que as configurações foram carregadas antes de conectar
       console.log('⏳ SSE: Aguardando carregamento das configurações...');
-      await loadSettings();
+      const settings = await loadSettings();
+      console.log('✅ SSE: Configurações carregadas:', {
+        apiBaseUrl: settings.apiBaseUrl,
+        companyName: settings.companyName
+      });
+      
       const url = await getSSEUrlAsync(machineId);
       console.log(`🔌 SSE: Conectando em ${url}...`);
+      console.log(`📋 SSE: Verificando se o servidor SSE está acessível em ${settings.apiBaseUrl}`);
       
       const eventSource = new EventSource(url);
       eventSourceRef.current = eventSource;
