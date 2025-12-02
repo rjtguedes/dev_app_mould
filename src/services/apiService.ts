@@ -1,6 +1,7 @@
 // 🌐 Serviço de API REST
 
-import { API_ENDPOINTS, getAPIUrl } from '../config/sse';
+import { API_ENDPOINTS, getAPIUrl, getAPIUrlAsync } from '../config/sse';
+import { loadSettings } from '../config/appSettings';
 import type { Machine } from '../types/machine';
 import type { MapaProducao, MapaDetalhes, AlocacaoMapa } from '../types/production';
 
@@ -125,7 +126,9 @@ class APIService {
     options: RequestInit = {}
   ): Promise<APIResponse<T>> {
     try {
-      const url = getAPIUrl(endpoint);
+      // ✅ NOVO: Garantir que as configurações foram carregadas antes de fazer request
+      await loadSettings();
+      const url = await getAPIUrlAsync(endpoint);
       console.log(`📡 API Request: ${options.method || 'GET'} ${url}`);
       
       // ✅ Log do body para requests POST/PUT (exceto senhas)

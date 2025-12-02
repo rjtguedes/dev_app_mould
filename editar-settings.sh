@@ -18,3 +18,4 @@ echo "💡 Após editar, salve com Ctrl+O e saia com Ctrl+X"
 echo ""
 nano settings.json
 
+

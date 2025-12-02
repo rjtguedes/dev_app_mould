@@ -26,13 +26,33 @@ loadSettings().then(settings => {
 export function getSSEUrl(machineId: number): string {
   // Sempre usar a configuração mais recente
   const baseUrl = getApiBaseUrl();
-  return `${baseUrl}/api/sse/updates/${machineId}`;
+  const url = `${baseUrl}/api/sse/updates/${machineId}`;
+  console.log('🔗 getSSEUrl() gerado:', url);
+  return url;
+}
+
+export async function getSSEUrlAsync(machineId: number): Promise<string> {
+  // Versão assíncrona que garante que as configurações foram carregadas
+  const baseUrl = await getApiBaseUrlAsync();
+  const url = `${baseUrl}/api/sse/updates/${machineId}`;
+  console.log('🔗 getSSEUrlAsync() gerado:', url);
+  return url;
 }
 
 export function getAPIUrl(endpoint: string): string {
   // Sempre usar a configuração mais recente
   const baseUrl = getApiBaseUrl();
-  return `${baseUrl}${endpoint}`;
+  const url = `${baseUrl}${endpoint}`;
+  console.log('🔗 getAPIUrl() gerado:', url);
+  return url;
+}
+
+export async function getAPIUrlAsync(endpoint: string): Promise<string> {
+  // Versão assíncrona que garante que as configurações foram carregadas
+  const baseUrl = await getApiBaseUrlAsync();
+  const url = `${baseUrl}${endpoint}`;
+  console.log('🔗 getAPIUrlAsync() gerado:', url);
+  return url;
 }
 
 // URLs dos endpoints

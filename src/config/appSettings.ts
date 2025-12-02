@@ -115,9 +115,22 @@ export function getCompanyName(): string {
 
 /**
  * Obtém a URL base da API (com fallback)
+ * ⚠️ IMPORTANTE: Se as configurações ainda não foram carregadas, retorna valores padrão
+ * Use await loadSettings() antes de chamar esta função para garantir valores atualizados
  */
 export function getApiBaseUrl(): string {
-  return getSettingsSync().apiBaseUrl;
+  const settings = getSettingsSync();
+  console.log('🔍 getApiBaseUrl() chamado - usando:', settings.apiBaseUrl);
+  return settings.apiBaseUrl;
+}
+
+/**
+ * Obtém a URL base da API de forma assíncrona (garante que as configurações foram carregadas)
+ */
+export async function getApiBaseUrlAsync(): Promise<string> {
+  const settings = await loadSettings();
+  console.log('🔍 getApiBaseUrlAsync() - configurações carregadas:', settings.apiBaseUrl);
+  return settings.apiBaseUrl;
 }
 
 // Carregar configurações na inicialização

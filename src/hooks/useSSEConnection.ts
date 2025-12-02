@@ -1,7 +1,8 @@
 // 🔌 Hook para conexão SSE (Server-Sent Events)
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { getSSEUrl, SSE_CONFIG } from '../config/sse';
+import { getSSEUrl, getSSEUrlAsync, SSE_CONFIG } from '../config/sse';
+import { loadSettings } from '../config/appSettings';
 
 interface SSEConnectionOptions {
   machineId: number;
@@ -50,7 +51,7 @@ export function useSSEConnection(options: SSEConnectionOptions) {
     failedAttemptsRef.current = 0; // ✅ NOVO: Resetar contador ao desconectar
   }, []);
 
-  const connect = useCallback(() => {
+  const connect = useCallback(async () => {
     if (!enabled || !machineId) {
       console.log('⏸️ SSE: Conexão desabilitada ou sem ID de máquina');
       return;
@@ -69,7 +70,10 @@ export function useSSEConnection(options: SSEConnectionOptions) {
     }
 
     try {
-      const url = getSSEUrl(machineId);
+      // ✅ NOVO: Garantir que as configurações foram carregadas antes de conectar
+      console.log('⏳ SSE: Aguardando carregamento das configurações...');
+      await loadSettings();
+      const url = await getSSEUrlAsync(machineId);
       console.log(`🔌 SSE: Conectando em ${url}...`);
       
       const eventSource = new EventSource(url);
@@ -141,7 +145,7 @@ export function useSSEConnection(options: SSEConnectionOptions) {
       
       // Tentar reconectar
       reconnectTimeoutRef.current = setTimeout(() => {
-        connect();
+        connect().catch(err => console.error('❌ Erro ao reconectar:', err));
       }, SSE_CONFIG.reconnectInterval);
     }
   }, [enabled, machineId]);
@@ -149,7 +153,7 @@ export function useSSEConnection(options: SSEConnectionOptions) {
   // Conectar/desconectar quando enabled ou machineId mudar
   useEffect(() => {
     if (enabled && machineId) {
-      connect();
+      connect().catch(err => console.error('❌ Erro ao conectar SSE:', err));
     } else {
       disconnect();
     }

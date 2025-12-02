@@ -1,6 +1,7 @@
 // 📊 Operator Dashboard com SSE + API REST
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { CheckCircle2 } from 'lucide-react';
 import { useSSEManager } from '../hooks/useSSEManager';
 import { useSounds } from '../hooks/useSounds';
 import { SingleMachineViewNew } from '../components/SingleMachineView-new';
@@ -11,6 +12,7 @@ import { DashboardHeader } from '../components/DashboardHeader';
 import { Sidebar } from '../components/Sidebar';
 import { LoadingSpinner } from '../components/LoadingSpinner';
 import { ErrorMessage } from '../components/ErrorMessage';
+import { ErrorModal } from '../components/ErrorModal';
 import { ProductionCommandsModal } from '../components/ProductionCommandsModal';
 import { JustifyStopModal } from '../components/JustifyStopModal';
 import { LayoutConfigModal } from '../components/LayoutConfigModal';
@@ -62,11 +64,17 @@ export function OperatorDashboard({
   const [stopReasons, setStopReasons] = useState<StopReason[]>([]);
   const [loadingStopReasons, setLoadingStopReasons] = useState(false);
   const [validationExecuted, setValidationExecuted] = useState(false); // Prevenir loops
+  const lastProcessedStopRef = React.useRef<{ id: number | null; tipo: 'ativa' | 'ultima' | null }>({ id: null, tipo: null }); // Rastrear última parada processada
 
   // ✅ NOVO: Estados para finalização de produções
   const [showFinalizarProducoes, setShowFinalizarProducoes] = useState(false);
   const [showAlertaSaldoZero, setShowAlertaSaldoZero] = useState(false);
   const [alertaSaldoZeroJaMostrado, setAlertaSaldoZeroJaMostrado] = useState(false);
+
+  // ✅ NOVO: Estados para feedback de justificação de paradas (melhorar UX)
+  const [showErrorModal, setShowErrorModal] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string>('');
+  const [showSuccessToast, setShowSuccessToast] = useState(false);
 
   // 🔊 Sons
   const { playAlert, playStop, playResume, playError, playSuccess } = useSounds();
@@ -615,6 +623,74 @@ export function OperatorDashboard({
     }
   }, [machineData?.contexto?.parada_ativa, playAlert]);
 
+  // ✅ NOVO: Abrir automaticamente o modal de justificar paradas quando detectar paradas não justificadas
+  useEffect(() => {
+    // Não abrir se o modal já estiver aberto ou se estiver carregando
+    if (showJustifyModal || isLoading || loadingStopReasons) {
+      return;
+    }
+
+    const ctx: any = machineData?.contexto || {};
+    const paradaAtiva = ctx.parada_ativa;
+    const ultimaParada = ctx.ultima_parada;
+    
+    // Verificar se há parada não justificada
+    const paradaAtivaJustificada = paradaAtiva?.motivo_id !== null && paradaAtiva?.motivo_id !== undefined;
+    const ultimaParadaJustificada = ctx.ultima_parada_justificada === true || ultimaParada?.justificada === true;
+    const temParadaNaoJustificada = (paradaAtiva && !paradaAtivaJustificada) || (ultimaParada && !ultimaParadaJustificada && !paradaAtiva);
+    
+    // Não abrir se já está justificada localmente
+    if (localStopJustified) {
+      return;
+    }
+
+    // Verificar se já processamos esta parada específica
+    const paradaId = paradaAtiva?.id || ultimaParada?.id;
+    const paradaTipo = paradaAtiva && !paradaAtivaJustificada ? 'ativa' : (ultimaParada && !ultimaParadaJustificada ? 'ultima' : null);
+    
+    if (paradaId && paradaTipo && 
+        lastProcessedStopRef.current.id === paradaId && 
+        lastProcessedStopRef.current.tipo === paradaTipo) {
+      // Já processamos esta parada, não abrir novamente
+      return;
+    }
+
+    if (temParadaNaoJustificada && paradaId) {
+      console.log('🛑 Parada não justificada detectada - abrindo modal automaticamente');
+      
+      // Marcar esta parada como processada
+      lastProcessedStopRef.current = { id: paradaId, tipo: paradaTipo! };
+      
+      // Carregar motivos de parada se necessário
+      const loadStopReasonsAndOpen = async () => {
+        if (stopReasons.length === 0) {
+          setLoadingStopReasons(true);
+          try {
+            const response = await apiService.listarMotivosParada({ id_maquina: machine.id_maquina });
+            if (response.success && response.data) {
+              setStopReasons(response.data);
+            }
+          } catch (error) {
+            console.error('❌ Erro ao carregar motivos de parada:', error);
+          } finally {
+            setLoadingStopReasons(false);
+          }
+        }
+        
+        // Verificar se é parada forçada (parada_ativa existe) ou parada normal (ultima_parada)
+        const isForcedStop = !!paradaAtiva && !paradaAtivaJustificada;
+        setIsManualStop(isForcedStop);
+        
+        // Abrir modal após um pequeno delay para garantir que os dados estão carregados
+        setTimeout(() => {
+          setShowJustifyModal(true);
+        }, 500);
+      };
+      
+      loadStopReasonsAndOpen();
+    }
+  }, [machineData?.contexto, showJustifyModal, isLoading, loadingStopReasons, stopReasons.length, localStopJustified, machine.id_maquina]);
+
   // Verificar modo admin
   useEffect(() => {
     const checkAdminMode = async () => {
@@ -978,24 +1054,44 @@ export function OperatorDashboard({
   }, []);
 
   // Handler para justificar parada (usa parada atual ou última parada)
+  // ✅ MELHORADO: Fecha modal imediatamente e mostra confirmação, processa resposta em background
   const handleJustifyStop = async (reasonId: number) => {
+    const paradaAtiva = machineData?.contexto?.parada_ativa as any;
+    const ultimaParada = (machineData?.contexto as any)?.ultima_parada;
+    const paradaId = paradaAtiva?.id || ultimaParada?.id;
+    
+    if (!paradaId) {
+      console.error('❌ Não há parada atual ou última parada para justificar');
+      setErrorMessage('Não há parada para justificar');
+      setShowErrorModal(true);
+      return;
+    }
+
+    // ✅ FECHAR MODAL IMEDIATAMENTE e mostrar confirmação
+    console.log('🔄 Justificando parada (feedback imediato):', { idParada: paradaId, idMotivo: reasonId });
+    setShowJustifyModal(false);
+    setIsManualStop(false);
+    setShowSuccessToast(true);
+    playSuccess();
+    
+    // ✅ Resetar ref para permitir detectar novas paradas
+    lastProcessedStopRef.current = { id: null, tipo: null };
+    
+    // ✅ Atualização otimista da UI
+    setLocalStopJustified(true);
+    setLocalStopJustifiedReason('Justificada');
+    
+    // ✅ Esconder toast após 3 segundos
+    setTimeout(() => {
+      setShowSuccessToast(false);
+    }, 3000);
+
+    // ✅ Processar resposta do backend em background (sem bloquear UI)
     try {
-      const paradaAtiva = machineData?.contexto?.parada_ativa as any;
-      const ultimaParada = (machineData?.contexto as any)?.ultima_parada;
-      const paradaId = paradaAtiva?.id || ultimaParada?.id;
-      if (!paradaId) {
-        console.error('❌ Não há parada atual ou última parada para justificar');
-        return;
-      }
-
-      console.log('🔄 Justificando parada:', { idParada: paradaId, idMotivo: reasonId });
-
       const response = await apiService.justificarParada(paradaId, reasonId);
       
       if (response.success) {
-        console.log('✅ Parada justificada com sucesso');
-        setShowJustifyModal(false);
-        setIsManualStop(false);
+        console.log('✅ Parada justificada com sucesso (backend confirmado)');
         // ✅ Atualização imediata na UI baseada no retorno da API
         try {
           const data: any = response.data || {};
@@ -1008,11 +1104,21 @@ export function OperatorDashboard({
         await consultarContexto();
         // A atualização virá via SSE
       } else {
-        throw new Error(response.error || 'Erro ao justificar parada');
+        // ✅ Se houver erro, reverter estado otimista e mostrar erro
+        console.error('❌ Erro ao justificar parada (backend):', response.error);
+        setLocalStopJustified(false);
+        setLocalStopJustifiedReason(null);
+        setErrorMessage(response.error || 'Erro ao justificar parada. Tente novamente.');
+        setShowErrorModal(true);
       }
-    } catch (error) {
+    } catch (error: any) {
+      // ✅ Se houver erro, reverter estado otimista e mostrar erro
       console.error('❌ Erro ao justificar parada:', error);
-      throw error;
+      setLocalStopJustified(false);
+      setLocalStopJustifiedReason(null);
+      const errorMsg = error?.message || error?.response?.data?.detail || 'Erro ao justificar parada. Tente novamente.';
+      setErrorMessage(errorMsg);
+      setShowErrorModal(true);
     }
   };
 
@@ -1040,30 +1146,43 @@ export function OperatorDashboard({
   };
 
   // Handler para confirmar parada forçada (quando motivo selecionado)
+  // ✅ MELHORADO: Fecha modal imediatamente e mostra confirmação, processa resposta em background
   const handleConfirmForcedStop = async (reasonId: number) => {
+    const jaParada = machineData?.contexto?.parada_ativa !== null;
+    
+    // Se já existe parada ativa, redirecionar para justificativa ao invés de criar nova parada
+    if (jaParada) {
+      console.warn('⚠️ Já existe uma parada ativa. Redirecionando para justificativa.');
+      await handleJustifyStop(reasonId);
+      return;
+    }
+
+    // ✅ FECHAR MODAL IMEDIATAMENTE e mostrar confirmação
+    console.log('🛑 Confirmando parada forçada (feedback imediato):', reasonId);
+    setShowJustifyModal(false);
+    setIsManualStop(false);
+    setShowSuccessToast(true);
+    playStop();
+    playSuccess();
+    
+    // ✅ Resetar ref para permitir detectar novas paradas
+    lastProcessedStopRef.current = { id: null, tipo: null };
+    
+    // ✅ Esconder toast após 3 segundos
+    setTimeout(() => {
+      setShowSuccessToast(false);
+    }, 3000);
+
+    // ✅ Processar resposta do backend em background (sem bloquear UI)
     try {
-      const jaParada = machineData?.contexto?.parada_ativa !== null;
-      // Se já existe parada ativa, redirecionar para justificativa ao invés de criar nova parada
-      if (jaParada) {
-        console.warn('⚠️ Já existe uma parada ativa. Redirecionando para justificativa.');
-        await handleJustifyStop(reasonId);
-        return;
-      }
-
-      console.log('🛑 Confirmando parada forçada com motivo:', reasonId);
-      playStop();
-
       const response = await forcarParada({
         id_maquina: machine.id_maquina,
         id_motivo: reasonId
       });
 
       if (response.success) {
-        console.log('✅ Parada forçada iniciada com sucesso');
+        console.log('✅ Parada forçada iniciada com sucesso (backend confirmado)');
         console.log('📊 Dados da parada:', response.data);
-        playSuccess();
-        setShowJustifyModal(false);
-        setIsManualStop(false);
         
         // ✅ Forçar atualização do contexto para garantir sincronização
         try {
@@ -1073,21 +1192,28 @@ export function OperatorDashboard({
           console.warn('⚠️ Erro ao atualizar contexto:', e);
         }
       } else {
-        throw new Error(response.error || 'Erro ao forçar parada');
+        // ✅ Se houver erro, mostrar erro
+        console.error('❌ Erro ao forçar parada (backend):', response.error);
+        setErrorMessage(response.error || 'Erro ao forçar parada. Tente novamente.');
+        setShowErrorModal(true);
       }
     } catch (error: any) {
       const msg = error?.message || '';
       const detail = (error?.detail || error?.response?.data?.detail || '').toString().toLowerCase();
+      
       // Tratamento amigável quando backend indica que já existe parada ativa
       if (msg.includes('400') || msg.includes('500') || detail.includes('parada ativa')) {
-        console.warn('⚠️ Backend informa que já há parada ativa. Abrindo justificativa.');
+        console.warn('⚠️ Backend informa que já há parada ativa. Redirecionando para justificativa.');
+        // Não mostrar erro, apenas redirecionar para justificativa
         await handleJustifyStop(reasonId);
-        setShowJustifyModal(false);
-        setIsManualStop(false);
         return;
       }
+      
+      // ✅ Se houver outro erro, mostrar erro
       console.error('❌ Erro ao forçar parada:', error);
-      throw error;
+      const errorMsg = error?.message || error?.response?.data?.detail || 'Erro ao forçar parada. Tente novamente.';
+      setErrorMessage(errorMsg);
+      setShowErrorModal(true);
     }
   };
 
@@ -1486,6 +1612,28 @@ export function OperatorDashboard({
             setShowProductionCommands(true);
           }}
         />
+
+        {/* ✅ NOVO: Modal de Erro para justificação de paradas */}
+        {showErrorModal && (
+          <ErrorModal
+            message={errorMessage}
+            onClose={() => {
+              setShowErrorModal(false);
+              setErrorMessage('');
+            }}
+          />
+        )}
+
+        {/* ✅ NOVO: Toast de Sucesso para justificação de paradas */}
+        {showSuccessToast && (
+          <div className="fixed top-4 right-4 z-50 bg-green-500 text-white px-6 py-4 rounded-lg shadow-lg flex items-center gap-3 animate-slide-in-right">
+            <CheckCircle2 className="w-6 h-6" />
+            <div>
+              <p className="font-semibold">Parada justificada com sucesso!</p>
+              <p className="text-sm text-green-100">A confirmação será processada em background.</p>
+            </div>
+          </div>
+        )}
 
         {/* Justificar Parada agora na Sidebar (removido botão flutuante) */}
     </div>

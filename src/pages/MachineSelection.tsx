@@ -236,6 +236,19 @@ export function MachineSelection({ initialMachine, onShowSettings, secondaryOper
     }
   }, [realtimeMachines, initialMachine]);
 
+  // ✅ NOVO: Processar automaticamente a máquina inicial ao carregar (carregar turno, etc)
+  useEffect(() => {
+    if (initialMachine && selectedMachine?.id_maquina === initialMachine.id_maquina) {
+      // Apenas carregar o turno se ainda não foi carregado
+      if (!currentShift) {
+        console.log('🚀 Processando máquina inicial automaticamente:', initialMachine.nome);
+        fetchCurrentShift(initialMachine.id_maquina).catch(err => 
+          console.error('❌ Erro ao carregar turno da máquina inicial:', err)
+        );
+      }
+    }
+  }, [initialMachine, selectedMachine, currentShift]);
+
   // Definir loading baseado no estado das máquinas
   useEffect(() => {
     setLoading(loadingMachines);
