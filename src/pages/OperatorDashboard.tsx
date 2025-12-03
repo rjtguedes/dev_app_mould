@@ -65,6 +65,8 @@ export function OperatorDashboard({
   const [loadingStopReasons, setLoadingStopReasons] = useState(false);
   const [validationExecuted, setValidationExecuted] = useState(false); // Prevenir loops
   const lastProcessedStopRef = React.useRef<{ id: number | null; tipo: 'ativa' | 'ultima' | null }>({ id: null, tipo: null }); // Rastrear última parada processada
+  const isProcessingStopRef = React.useRef<boolean>(false); // ✅ NOVO: Prevenir múltiplas execuções simultâneas
+  const modalOpenTimeoutRef = React.useRef<NodeJS.Timeout | null>(null); // ✅ NOVO: Rastrear timeout do modal
 
   // ✅ NOVO: Estados para finalização de produções
   const [showFinalizarProducoes, setShowFinalizarProducoes] = useState(false);
@@ -666,10 +668,10 @@ export function OperatorDashboard({
     }
   }, [machineData?.contexto?.parada_ativa, playAlert]);
 
-  // ✅ NOVO: Abrir automaticamente o modal de justificar paradas quando detectar paradas não justificadas
+  // ✅ NOVO: Justificar automaticamente apenas quando houver motivo pré-selecionado (SEM abrir modal automaticamente)
   useEffect(() => {
-    // Não abrir se o modal já estiver aberto ou se estiver carregando
-    if (showJustifyModal || isLoading || loadingStopReasons) {
+    // Não processar se já está carregando ou processando
+    if (isLoading || loadingStopReasons || isProcessingStopRef.current) {
       return;
     }
 
@@ -682,7 +684,7 @@ export function OperatorDashboard({
     const ultimaParadaJustificada = ctx.ultima_parada_justificada === true || ultimaParada?.justificada === true;
     const temParadaNaoJustificada = (paradaAtiva && !paradaAtivaJustificada) || (ultimaParada && !ultimaParadaJustificada && !paradaAtiva);
     
-    // Não abrir se já está justificada localmente
+    // Não processar se já está justificada localmente
     if (localStopJustified) {
       return;
     }
@@ -691,92 +693,60 @@ export function OperatorDashboard({
     const paradaId = paradaAtiva?.id || ultimaParada?.id;
     const paradaTipo = paradaAtiva && !paradaAtivaJustificada ? 'ativa' : (ultimaParada && !ultimaParadaJustificada ? 'ultima' : null);
     
-    if (paradaId && paradaTipo && 
+    // Verificar se já processamos esta parada
+    if (paradaId && paradaTipo) {
+      const alreadyProcessed = 
         lastProcessedStopRef.current.id === paradaId && 
-        lastProcessedStopRef.current.tipo === paradaTipo) {
-      // Já processamos esta parada, não abrir novamente
-      return;
-    }
-
-    if (temParadaNaoJustificada && paradaId) {
-      // ✅ NOVO: Verificar se há motivo pré-selecionado
-      if (preSelectedReasonId) {
-        console.log('🛑 Parada não justificada detectada - usando motivo pré-selecionado:', preSelectedReasonId);
-        
-        // Marcar esta parada como processada
-        lastProcessedStopRef.current = { id: paradaId, tipo: paradaTipo! };
-        
-        // Justificar automaticamente com motivo pré-selecionado
-        const justifyWithPreSelected = async () => {
-          try {
-            const paradaId = paradaAtiva?.id || ultimaParada?.id;
-            if (!paradaId) {
-              console.error('❌ Não há parada para justificar');
-              return;
-            }
-
-            console.log('🔄 Justificando automaticamente com motivo pré-selecionado:', preSelectedReasonId);
-            
-            // Chamar API diretamente (sem abrir modal)
-            const response = await apiService.justificarParada(paradaId, preSelectedReasonId);
-            
-            if (response.success) {
-              console.log('✅ Parada justificada automaticamente com motivo pré-selecionado');
-              setLocalStopJustified(true);
-              setLocalStopJustifiedReason('Justificada (pré-selecionado)');
-              // Limpar motivo pré-selecionado após usar
-              clearPreSelectedReason();
-              // Atualizar contexto
-              await consultarContexto();
-            } else {
-              throw new Error(response.error || 'Erro ao justificar parada');
-            }
-          } catch (error) {
-            console.error('❌ Erro ao justificar com motivo pré-selecionado:', error);
-            // Se houver erro, abrir modal para o usuário escolher manualmente
-            setIsManualStop(!!paradaAtiva && !paradaAtivaJustificada);
-            setShowJustifyModal(true);
-          }
-        };
-        
-        justifyWithPreSelected();
+        lastProcessedStopRef.current.tipo === paradaTipo;
+      
+      if (alreadyProcessed) {
+        // Já processamos esta parada
         return;
       }
+    }
+
+    // ✅ APENAS justificar automaticamente se houver motivo pré-selecionado (SEM abrir modal)
+    if (temParadaNaoJustificada && paradaId && paradaTipo && preSelectedReasonId) {
+      // Marcar como processando para evitar múltiplas execuções
+      isProcessingStopRef.current = true;
       
-      console.log('🛑 Parada não justificada detectada - abrindo modal automaticamente');
+      console.log('🛑 Parada não justificada detectada - usando motivo pré-selecionado:', preSelectedReasonId);
       
-      // Marcar esta parada como processada
-      lastProcessedStopRef.current = { id: paradaId, tipo: paradaTipo! };
+      // Marcar esta parada como processada ANTES de processar
+      lastProcessedStopRef.current = { id: paradaId, tipo: paradaTipo };
       
-      // Carregar motivos de parada se necessário
-      const loadStopReasonsAndOpen = async () => {
-        if (stopReasons.length === 0) {
-          setLoadingStopReasons(true);
-          try {
-            const response = await apiService.listarMotivosParada({ id_maquina: machine.id_maquina });
-            if (response.success && response.data) {
-              setStopReasons(response.data);
-            }
-          } catch (error) {
-            console.error('❌ Erro ao carregar motivos de parada:', error);
-          } finally {
-            setLoadingStopReasons(false);
+      // Justificar automaticamente com motivo pré-selecionado (SEM abrir modal)
+      const justifyWithPreSelected = async () => {
+        try {
+          console.log('🔄 Justificando automaticamente com motivo pré-selecionado:', preSelectedReasonId);
+          
+          // Chamar API diretamente (sem abrir modal)
+          const response = await apiService.justificarParada(paradaId, preSelectedReasonId);
+          
+          if (response.success) {
+            console.log('✅ Parada justificada automaticamente com motivo pré-selecionado');
+            setLocalStopJustified(true);
+            setLocalStopJustifiedReason('Justificada (pré-selecionado)');
+            // Limpar motivo pré-selecionado após usar
+            clearPreSelectedReason();
+            // Atualizar contexto
+            await consultarContexto();
+          } else {
+            throw new Error(response.error || 'Erro ao justificar parada');
           }
+        } catch (error) {
+          console.error('❌ Erro ao justificar com motivo pré-selecionado:', error);
+          // Se houver erro, apenas logar - NÃO abrir modal automaticamente
+          // O operador pode clicar no botão para justificar manualmente
+        } finally {
+          // Liberar flag de processamento
+          isProcessingStopRef.current = false;
         }
-        
-        // Verificar se é parada forçada (parada_ativa existe) ou parada normal (ultima_parada)
-        const isForcedStop = !!paradaAtiva && !paradaAtivaJustificada;
-        setIsManualStop(isForcedStop);
-        
-        // Abrir modal após um pequeno delay para garantir que os dados estão carregados
-        setTimeout(() => {
-          setShowJustifyModal(true);
-        }, 500);
       };
       
-      loadStopReasonsAndOpen();
+      justifyWithPreSelected();
     }
-  }, [machineData?.contexto, showJustifyModal, isLoading, loadingStopReasons, stopReasons.length, localStopJustified, machine.id_maquina, preSelectedReasonId, clearPreSelectedReason, consultarContexto]);
+  }, [machineData?.contexto, isLoading, loadingStopReasons, localStopJustified, preSelectedReasonId, clearPreSelectedReason, consultarContexto]);
 
   // Verificar modo admin
   useEffect(() => {
@@ -1183,8 +1153,13 @@ export function OperatorDashboard({
     setShowSuccessToast(true);
     playSuccess();
     
-    // ✅ Resetar ref para permitir detectar novas paradas
+    // ✅ Resetar refs para permitir detectar novas paradas
     lastProcessedStopRef.current = { id: null, tipo: null };
+    isProcessingStopRef.current = false;
+    if (modalOpenTimeoutRef.current) {
+      clearTimeout(modalOpenTimeoutRef.current);
+      modalOpenTimeoutRef.current = null;
+    }
     
     // ✅ Atualização otimista da UI
     setLocalStopJustified(true);
@@ -1275,8 +1250,13 @@ export function OperatorDashboard({
     playStop();
     playSuccess();
     
-    // ✅ Resetar ref para permitir detectar novas paradas
+    // ✅ Resetar refs para permitir detectar novas paradas
     lastProcessedStopRef.current = { id: null, tipo: null };
+    isProcessingStopRef.current = false;
+    if (modalOpenTimeoutRef.current) {
+      clearTimeout(modalOpenTimeoutRef.current);
+      modalOpenTimeoutRef.current = null;
+    }
     
     // ✅ Esconder toast após 3 segundos
     setTimeout(() => {
@@ -1393,7 +1373,7 @@ export function OperatorDashboard({
             }
           }
         }}
-        onJustifyStop={() => {
+        onJustifyStop={async () => {
           // ✅ CORREÇÃO: Verificar se a parada já está justificada antes de abrir o modal
           const ctx: any = machineData?.contexto || {};
           const paradaAtivaJustificada = ctx.parada_ativa?.motivo_id !== null && ctx.parada_ativa?.motivo_id !== undefined;
@@ -1403,6 +1383,25 @@ export function OperatorDashboard({
             console.log('ℹ️ Parada já está justificada, não abrindo modal');
             return;
           }
+          
+          // ✅ Carregar motivos de parada se necessário antes de abrir o modal
+          if (stopReasons.length === 0) {
+            setLoadingStopReasons(true);
+            try {
+              const response = await apiService.listarMotivosParada({ id_maquina: machine.id_maquina });
+              if (response.success && response.data) {
+                setStopReasons(response.data);
+              }
+            } catch (error) {
+              console.error('❌ Erro ao carregar motivos de parada:', error);
+            } finally {
+              setLoadingStopReasons(false);
+            }
+          }
+          
+          // Verificar se é parada forçada (parada_ativa existe) ou parada normal (ultima_parada)
+          const isForcedStop = !!ctx.parada_ativa && !paradaAtivaJustificada;
+          setIsManualStop(isForcedStop);
           
           setShowJustifyModal(true);
         }}
@@ -1670,6 +1669,12 @@ export function OperatorDashboard({
           onClose={() => {
             setShowJustifyModal(false);
             setIsManualStop(false);
+            // ✅ NOVO: Limpar flags ao fechar modal
+            isProcessingStopRef.current = false;
+            if (modalOpenTimeoutRef.current) {
+              clearTimeout(modalOpenTimeoutRef.current);
+              modalOpenTimeoutRef.current = null;
+            }
           }}
           onJustify={async (reasonId: number) => {
             if (isManualStop) {
